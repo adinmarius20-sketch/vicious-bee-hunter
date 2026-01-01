@@ -88,13 +88,21 @@ end
 
 -- FIXED: Improved stinger detection
 local function findStingerData()
-    -- Search all workspace descendants for Stinger object
+    -- The specific stinger to ignore
+    local ignorePosition = Vector3.new(125.85546875, 41.43798065185547, 427.93963623046875)
+    local ignoreRadius = 1 -- a small tolerance in studs
+
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Name == "Stinger" then
+            -- Ignore this specific stinger
+            if (obj.Position - ignorePosition).Magnitude <= ignoreRadius then
+                print("⚠️ Ignoring Stinger at:", obj.Position)
+                continue -- skip this one
+            end
+
             local fieldName = "Unknown"
             local parent = obj.Parent
             
-            -- Check parent chain for field name
             while parent and parent ~= Workspace do
                 if fields[parent.Name] then
                     fieldName = parent.Name
@@ -103,7 +111,6 @@ local function findStingerData()
                 parent = parent.Parent
             end
             
-            -- If unknown, find closest field by distance (increased range)
             if fieldName == "Unknown" then
                 local closestField = nil
                 local closestDistance = math.huge
@@ -116,7 +123,6 @@ local function findStingerData()
                     end
                 end
                 
-                -- Increased range to 300 studs to catch more fields
                 if closestField and closestDistance < 300 then
                     fieldName = closestField .. " (~" .. math.floor(closestDistance) .. " studs)"
                 end
@@ -126,13 +132,19 @@ local function findStingerData()
         end
     end
     
-    -- Check Monsters folder as backup
+    -- Check Monsters folder as backup (optional)
     local monsters = Workspace:FindFirstChild("Monsters")
     if monsters then
         for _, mob in ipairs(monsters:GetChildren()) do
             if mob.Name:lower():find("vicious") then
                 local stinger = mob:FindFirstChild("Stinger", true)
                 if stinger then
+                    -- Ignore specific stinger in Monsters too
+                    if (stinger.Position - ignorePosition).Magnitude <= ignoreRadius then
+                        print("⚠️ Ignoring Stinger in Monsters at:", stinger.Position)
+                        continue
+                    end
+
                     local closestField = "Unknown"
                     local closestDistance = math.huge
                     
