@@ -169,6 +169,14 @@ local function checkForStinger()
             distance = math.floor((hrp.Position - stinger.Position).Magnitude) .. " studs"
         end
         
+        -- DEBUG: Print stinger position to find correct field coords
+        print("🐝 STINGER POSITION:", stinger.Position)
+        print("🐝 CLOSEST FIELD CHECK:")
+        for name, pos in pairs(fields) do
+            local dist = (stinger.Position - pos).Magnitude
+            print("  " .. name .. ": " .. math.floor(dist) .. " studs")
+        end
+        
         sendWebhook(
             "🎯 VICIOUS BEE FOUND!",
             "A Vicious Bee stinger has been detected!",
@@ -176,7 +184,8 @@ local function checkForStinger()
             {
                 {name = "📍 Field", value = fieldName, inline = true},
                 {name = "📏 Distance", value = distance, inline = true},
-                {name = "🌐 Server ID", value = game.JobId, inline = false}
+                {name = "🌐 Server ID", value = game.JobId, inline = false},
+                {name = "🎯 Stinger Position", value = tostring(stinger.Position), inline = false}
             }
         )
         
