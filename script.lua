@@ -296,7 +296,6 @@ local function mainLoop()
             if config.isRunning and not config.stingerDetected then
                 print("🔄 Server hopping now...")
                 serverHopPublic()
-                break
             end
         end
         
