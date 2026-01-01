@@ -118,7 +118,13 @@ local function findStingerData()
                 
                 -- Increased range to 300 studs to catch more fields
                 if closestField and closestDistance < 300 then
-                    fieldName = closestField .. " (~" .. math.floor(closestDistance) .. " studs)"
+                    -- Only accept if it's a valid Vicious Bee spawn field
+                    if validViciousFields[closestField] then
+                        fieldName = closestField .. " (~" .. math.floor(closestDistance) .. " studs)"
+                    else
+                        print("⚠️ Stinger found near " .. closestField .. " but that's not a valid Vicious spawn field!")
+                        return nil, nil -- Ignore false positives
+                    end
                 end
             end
             
@@ -144,7 +150,13 @@ local function findStingerData()
                         end
                     end
                     
-                    return stinger, closestField
+                    -- Validate it's a real Vicious Bee spawn location
+                    if closestField and validViciousFields[closestField] then
+                        return stinger, closestField
+                    else
+                        print("⚠️ Found stinger-like object but not in valid Vicious field")
+                        return nil, nil
+                    end
                 end
             end
         end
@@ -158,6 +170,12 @@ local function checkForStinger()
     local stinger, fieldName = findStingerData()
     
     if stinger then
+        -- Verify stinger still exists and has a parent
+        if not stinger.Parent or stinger.Parent == nil then
+            print("⚠️ Stinger found but already removed/destroyed")
+            return false, nil
+        end
+        
         config.stingerDetected = true
         config.currentField = fieldName
         
@@ -169,12 +187,21 @@ local function checkForStinger()
             distance = math.floor((hrp.Position - stinger.Position).Magnitude) .. " studs"
         end
         
+        -- DEBUG: Check if stinger is actually accessible
+        local isAccessible = stinger.Parent and stinger.Transparency < 1
+        print("🐝 STINGER FOUND!")
+        print("  Position:", stinger.Position)
+        print("  Parent exists:", stinger.Parent ~= nil)
+        print("  Transparency:", stinger.Transparency)
+        print("  Can collide:", stinger.CanCollide)
+        
         -- DEBUG: Print stinger position to find correct field coords
-        print("🐝 STINGER POSITION:", stinger.Position)
         print("🐝 CLOSEST FIELD CHECK:")
         for name, pos in pairs(fields) do
             local dist = (stinger.Position - pos).Magnitude
-            print("  " .. name .. ": " .. math.floor(dist) .. " studs")
+            if dist < 400 then
+                print("  " .. name .. ": " .. math.floor(dist) .. " studs")
+            end
         end
         
         sendWebhook(
