@@ -88,50 +88,59 @@ end
 
 -- FIXED: Improved stinger detection
 local function findStingerData()
-    -- The specific stinger to ignore
-    local ignorePosition = Vector3.new(125.85546875, 41.43798065185547, 427.93963623046875)
-    local ignoreRadius = 1 -- a small tolerance in studs
+    -- List of stingers to ignore
+    local ignoreStingers = {
+        Vector3.new(125.85546875, 41.43798065185547, 427.93963623046875) -- Stinger #1
+    }
+    local ignoreRadius = 1 -- small tolerance
 
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Name == "Stinger" then
-            -- Ignore this specific stinger
-            if (obj.Position - ignorePosition).Magnitude <= ignoreRadius then
-                print("⚠️ Ignoring Stinger at:", obj.Position)
-                continue -- skip this one
-            end
-
-            local fieldName = "Unknown"
-            local parent = obj.Parent
-            
-            while parent and parent ~= Workspace do
-                if fields[parent.Name] then
-                    fieldName = parent.Name
+            -- Check if this stinger is in the ignore list
+            local ignoreThis = false
+            for _, pos in ipairs(ignoreStingers) do
+                if (obj.Position - pos).Magnitude <= ignoreRadius then
+                    ignoreThis = true
                     break
                 end
-                parent = parent.Parent
             end
-            
-            if fieldName == "Unknown" then
-                local closestField = nil
-                local closestDistance = math.huge
+            if ignoreThis then
+                print("⚠️ Ignoring Stinger at:", obj.Position)
+            else
+                -- Normal detection logic
+                local fieldName = "Unknown"
+                local parent = obj.Parent
                 
-                for name, pos in pairs(fields) do
-                    local distance = (obj.Position - pos).Magnitude
-                    if distance < closestDistance then
-                        closestDistance = distance
-                        closestField = name
+                while parent and parent ~= Workspace do
+                    if fields[parent.Name] then
+                        fieldName = parent.Name
+                        break
+                    end
+                    parent = parent.Parent
+                end
+                
+                if fieldName == "Unknown" then
+                    local closestField = nil
+                    local closestDistance = math.huge
+                    
+                    for name, pos in pairs(fields) do
+                        local distance = (obj.Position - pos).Magnitude
+                        if distance < closestDistance then
+                            closestDistance = distance
+                            closestField = name
+                        end
+                    end
+                    
+                    if closestField and closestDistance < 300 then
+                        fieldName = closestField .. " (~" .. math.floor(closestDistance) .. " studs)"
                     end
                 end
                 
-                if closestField and closestDistance < 300 then
-                    fieldName = closestField .. " (~" .. math.floor(closestDistance) .. " studs)"
-                end
+                return obj, fieldName
             end
-            
-            return obj, fieldName
         end
     end
-    
+
     -- Check Monsters folder as backup (optional)
     local monsters = Workspace:FindFirstChild("Monsters")
     if monsters then
@@ -139,29 +148,34 @@ local function findStingerData()
             if mob.Name:lower():find("vicious") then
                 local stinger = mob:FindFirstChild("Stinger", true)
                 if stinger then
-                    -- Ignore specific stinger in Monsters too
-                    if (stinger.Position - ignorePosition).Magnitude <= ignoreRadius then
-                        print("⚠️ Ignoring Stinger in Monsters at:", stinger.Position)
-                        continue
-                    end
-
-                    local closestField = "Unknown"
-                    local closestDistance = math.huge
-                    
-                    for name, pos in pairs(fields) do
-                        local distance = (mob:GetPivot().Position - pos).Magnitude
-                        if distance < closestDistance then
-                            closestDistance = distance
-                            closestField = name
+                    local ignoreThis = false
+                    for _, pos in ipairs(ignoreStingers) do
+                        if (stinger.Position - pos).Magnitude <= ignoreRadius then
+                            ignoreThis = true
+                            break
                         end
                     end
-                    
-                    return stinger, closestField
+                    if ignoreThis then
+                        print("⚠️ Ignoring Stinger in Monsters at:", stinger.Position)
+                    else
+                        local closestField = "Unknown"
+                        local closestDistance = math.huge
+                        
+                        for name, pos in pairs(fields) do
+                            local distance = (mob:GetPivot().Position - pos).Magnitude
+                            if distance < closestDistance then
+                                closestDistance = distance
+                                closestField = name
+                            end
+                        end
+                        
+                        return stinger, closestField
+                    end
                 end
             end
         end
     end
-    
+
     return nil, nil
 end
 
