@@ -103,7 +103,7 @@ local function findStingerData()
                 parent = parent.Parent
             end
             
-            -- If unknown, find closest field by distance
+            -- If unknown, find closest field by distance (increased range)
             if fieldName == "Unknown" then
                 local closestField = nil
                 local closestDistance = math.huge
@@ -116,8 +116,9 @@ local function findStingerData()
                     end
                 end
                 
-                if closestField and closestDistance < 200 then
-                    fieldName = closestField
+                -- Increased range to 300 studs to catch more fields
+                if closestField and closestDistance < 300 then
+                    fieldName = closestField .. " (~" .. math.floor(closestDistance) .. " studs)"
                 end
             end
             
@@ -458,36 +459,3 @@ end
 print("🐝 Vicious Bee Stinger Hunter v2 Loaded!")
 print("📱 Opening GUI...")
 createGUI()
-
--- === DEBUG: Scan for EXISTING objects (if Vicious Bee already spawned) ===
-print("🔍 FULL SCAN MODE: Checking what's already in the game...")
-
-spawn(function()
-    wait(2) -- Give game time to load
-    
-    print("=== SCANNING WORKSPACE ===")
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        -- Look for Models with Humanoids (mobs/NPCs)
-        if obj:IsA("Model") then
-            local humanoid = obj:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                print("🔴 MOB/NPC FOUND:", obj.Name)
-                print("   Max Health:", humanoid.MaxHealth)
-                print("   Current Health:", humanoid.Health)
-                print("   Position:", obj:GetPivot().Position)
-                print("   Parent:", obj.Parent.Name)
-                print("---")
-            end
-        end
-    end
-    
-    print("=== SCAN COMPLETE ===")
-    print("Look for the mob with the highest health or unusual name!")
-end)
-
--- ALSO monitor for new spawns in case it respawns
-workspace.DescendantAdded:Connect(function(obj)
-    print("📦 NEW:", obj.Name, "| Type:", obj.ClassName)
-end)
-
-print("✅ Scanning mode active!")
