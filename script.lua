@@ -88,26 +88,17 @@ end
 
 -- FIXED: Improved stinger detection
 local function findStingerData()
-    -- List of stingers to ignore
-    local ignoreStingers = {
-        Vector3.new(125.85546875, 41.43798065185547, 427.93963623046875) -- Stinger #1
-    }
+    -- Specific stinger to ignore
+    local ignorePosition = Vector3.new(125.85546875, 41.43798065185547, 427.93963623046875)
     local ignoreRadius = 1 -- small tolerance
 
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Name == "Stinger" then
-            -- Check if this stinger is in the ignore list
-            local ignoreThis = false
-            for _, pos in ipairs(ignoreStingers) do
-                if (obj.Position - pos).Magnitude <= ignoreRadius then
-                    ignoreThis = true
-                    break
-                end
-            end
-            if ignoreThis then
+            -- Skip this stinger if it matches the ignore position
+            if (obj.Position - ignorePosition).Magnitude <= ignoreRadius then
                 print("⚠️ Ignoring Stinger at:", obj.Position)
             else
-                -- Normal detection logic
+                -- Only return if it's NOT the ignored stinger
                 local fieldName = "Unknown"
                 local parent = obj.Parent
                 
@@ -141,21 +132,14 @@ local function findStingerData()
         end
     end
 
-    -- Check Monsters folder as backup (optional)
+    -- Check Monsters folder as backup
     local monsters = Workspace:FindFirstChild("Monsters")
     if monsters then
         for _, mob in ipairs(monsters:GetChildren()) do
             if mob.Name:lower():find("vicious") then
                 local stinger = mob:FindFirstChild("Stinger", true)
                 if stinger then
-                    local ignoreThis = false
-                    for _, pos in ipairs(ignoreStingers) do
-                        if (stinger.Position - pos).Magnitude <= ignoreRadius then
-                            ignoreThis = true
-                            break
-                        end
-                    end
-                    if ignoreThis then
+                    if (stinger.Position - ignorePosition).Magnitude <= ignoreRadius then
                         print("⚠️ Ignoring Stinger in Monsters at:", stinger.Position)
                     else
                         local closestField = "Unknown"
