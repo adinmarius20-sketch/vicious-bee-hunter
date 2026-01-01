@@ -7,6 +7,49 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 
+local function onNewObject(obj)
+    print("🧪 New object:", obj:GetFullName())
+    if not config.isRunning then return end
+    if not obj:IsA("BasePart") then return end
+
+    -- Filter possible stingers (name OR parent)
+    local name = obj.Name:lower()
+    if not (name:find("stinger") or name:find("spike")) then
+        return
+    end
+
+    -- Ignore fully invisible junk if needed
+
+    -- Find closest field
+    local closestField = "Unknown"
+    local closestDistance = math.huge
+
+    for fieldName, pos in pairs(fields) do
+        local dist = (obj.Position - pos).Magnitude
+        if dist < closestDistance then
+            closestDistance = dist
+            closestField = fieldName
+        end
+    end
+
+    config.stingerDetected = true
+    config.currentField = closestField
+
+    sendWebhook(
+        "🆕 OBJECT SPAWNED",
+        "A new suspicious part appeared in the world",
+        0xFFCC00,
+        {
+            { name = "📦 Name", value = obj.Name, inline = true },
+            { name = "📍 Field", value = closestField, inline = true },
+            { name = "📏 Distance", value = math.floor(closestDistance) .. " studs", inline = true },
+            { name = "🧭 Position", value = tostring(obj.Position), inline = false }
+        }
+    )
+
+    print("🆕 Detected new part:", obj:GetFullName())
+end
+
 local request = request or http_request or syn.request
 
 local player = Players.LocalPlayer
@@ -409,6 +452,10 @@ local function createGUI()
             end
             
             config.isRunning = true
+            if not config._descendantConnection then
+                config._descendantConnection =
+                    Workspace.DescendantAdded:Connect(onNewObject)
+            end
             StartButton.Text = "STOP HUNTING"
             StartButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
             StatusLabel.Text = "Status: 🔍 Hunting (Public Servers)..."
