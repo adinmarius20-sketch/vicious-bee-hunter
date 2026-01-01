@@ -118,13 +118,7 @@ local function findStingerData()
                 
                 -- Increased range to 300 studs to catch more fields
                 if closestField and closestDistance < 300 then
-                    -- Only accept if it's a valid Vicious Bee spawn field
-                    if validViciousFields[closestField] then
-                        fieldName = closestField .. " (~" .. math.floor(closestDistance) .. " studs)"
-                    else
-                        print("⚠️ Stinger found near " .. closestField .. " but that's not a valid Vicious spawn field!")
-                        return nil, nil -- Ignore false positives
-                    end
+                    fieldName = closestField .. " (~" .. math.floor(closestDistance) .. " studs)"
                 end
             end
             
@@ -150,13 +144,7 @@ local function findStingerData()
                         end
                     end
                     
-                    -- Validate it's a real Vicious Bee spawn location
-                    if closestField and validViciousFields[closestField] then
-                        return stinger, closestField
-                    else
-                        print("⚠️ Found stinger-like object but not in valid Vicious field")
-                        return nil, nil
-                    end
+                    return stinger, closestField
                 end
             end
         end
@@ -167,61 +155,43 @@ end
 
 -- FIXED: Added missing checkForStinger function
 local function checkForStinger()
-    local viciousPart, fieldName = findStingerData()
+    local stinger, fieldName = findStingerData()
     
-    if viciousPart then
-        if not config.stingerDetected then
-            config.stingerDetected = true
-            config.currentField = fieldName
-            
-            local char = player.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            local distance = "Unknown"
-            
-            if hrp then
-                distance = math.floor((hrp.Position - viciousPart.Position).Magnitude) .. " studs"
-            end
-            
-            sendWebhook(
-                "🎯 VICIOUS BEE FOUND!",
-                "A Vicious Bee has been detected!",
-                0xFF0000,
-                {
-                    {name = "📍 Field", value = fieldName, inline = true},
-                    {name = "📏 Distance", value = distance, inline = true},
-                    {name = "🌐 Server ID", value = game.JobId, inline = false}
-                }
-            )
-            
-            -- Update GUI status
-            local gui = CoreGui:FindFirstChild("ViciousBeeHunterGUI")
-            if gui and gui:FindFirstChild("MainFrame") then
-                local statusLabel = gui.MainFrame:FindFirstChild("StatusLabel")
-                if statusLabel then
-                    statusLabel.Text = "Status: 🎯 VICIOUS BEE FOUND!"
-                    statusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
-                end
-            end
-            
-            print("🎯 VICIOUS BEE FOUND IN:", fieldName)
+    if stinger then
+        config.stingerDetected = true
+        config.currentField = fieldName
+        
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local distance = "Unknown"
+        
+        if hrp then
+            distance = math.floor((hrp.Position - stinger.Position).Magnitude) .. " studs"
         end
+        
+        sendWebhook(
+            "🎯 VICIOUS BEE FOUND!",
+            "A Vicious Bee stinger has been detected!",
+            0xFF0000,
+            {
+                {name = "📍 Field", value = fieldName, inline = true},
+                {name = "📏 Distance", value = distance, inline = true},
+                {name = "🌐 Server ID", value = game.JobId, inline = false}
+            }
+        )
+        
+        -- Update GUI status
+        local gui = CoreGui:FindFirstChild("ViciousBeeHunterGUI")
+        if gui and gui:FindFirstChild("MainFrame") then
+            local statusLabel = gui.MainFrame:FindFirstChild("StatusLabel")
+            if statusLabel then
+                statusLabel.Text = "Status: 🎯 VICIOUS BEE FOUND!"
+                statusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+            end
+        end
+        
+        print("🎯 VICIOUS BEE FOUND IN:", fieldName)
         return true, fieldName
-    else
-        -- Vicious Bee despawned or defeated
-        if config.stingerDetected then
-            sendWebhook(
-                "✅ Vicious Bee Defeated/Despawned",
-                "The Vicious Bee is no longer present. Continuing search...",
-                0x00FF00,
-                {
-                    {name = "Previous Field", value = config.currentField, inline = true}
-                }
-            )
-            
-            config.stingerDetected = false
-            config.currentField = "None"
-            print("✅ Vicious Bee gone.")
-        end
     end
     
     return false, nil
@@ -268,34 +238,14 @@ local function serverHopPublic()
 end
 
 local function mainLoop()
-    print("🔍 Starting hunt loop...")
-    
     while config.isRunning do
-        print("🔎 Checking for stingers...")
         local found, fieldName = checkForStinger()
         
-        if found then
-            print("✅ Stinger detected! Staying in server.")
-            -- Found it! Stay in this server
-            wait(config.checkInterval)
-        else
-            print("❌ No stinger found. Waiting " .. config.serverHopDelay .. " seconds before hopping...")
-            
-            -- Update GUI
-            local gui = CoreGui:FindFirstChild("ViciousBeeHunterGUI")
-            if gui and gui:FindFirstChild("MainFrame") then
-                local statusLabel = gui.MainFrame:FindFirstChild("StatusLabel")
-                if statusLabel then
-                    statusLabel.Text = "Status: No stinger found, hopping in " .. config.serverHopDelay .. "s..."
-                    statusLabel.TextColor3 = Color3.fromRGB(255, 165, 0)
-                end
-            end
-            
+        if not found and not config.stingerDetected then
             wait(config.serverHopDelay)
-            
             if config.isRunning and not config.stingerDetected then
-                print("🔄 Server hopping now...")
                 serverHopPublic()
+                break
             end
         end
         
@@ -317,7 +267,6 @@ local function createGUI()
     local FieldLabel = Instance.new("TextLabel")
     local CloseButton = Instance.new("TextButton")
     local AutoStartCheckbox = Instance.new("TextButton")
-    local DebugButton = Instance.new("TextButton")
     
     ScreenGui.Name = "ViciousBeeHunterGUI"
     ScreenGui.Parent = CoreGui
@@ -327,8 +276,8 @@ local function createGUI()
     MainFrame.Parent = ScreenGui
     MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     MainFrame.BorderSizePixel = 0
-    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -180)
-    MainFrame.Size = UDim2.new(0, 400, 0, 370)
+    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -170)
+    MainFrame.Size = UDim2.new(0, 400, 0, 340)
     MainFrame.Active = true
     MainFrame.Draggable = true
     
@@ -379,21 +328,10 @@ local function createGUI()
     
     Instance.new("UICorner", AutoStartCheckbox)
     
-    DebugButton.Parent = MainFrame
-    DebugButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
-    DebugButton.Position = UDim2.new(0, 20, 0, 285)
-    DebugButton.Size = UDim2.new(1, -40, 0, 35)
-    DebugButton.Font = Enum.Font.GothamBold
-    DebugButton.Text = "🔍 DEBUG: Find All Stingers"
-    DebugButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    DebugButton.TextSize = 14
-    
-    Instance.new("UICorner", DebugButton)
-    
     StartButton.Parent = MainFrame
     StartButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
     StartButton.Position = UDim2.new(0, 20, 0, 160)
-    StartButton.Size = UDim2.new(1, -40, 0, 40)
+    StartButton.Size = UDim2.new(1, -40, 0, 45)
     StartButton.Font = Enum.Font.GothamBold
     StartButton.Text = "START HUNTING"
     StartButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -403,7 +341,7 @@ local function createGUI()
     
     StatusLabel.Parent = MainFrame
     StatusLabel.BackgroundTransparency = 1
-    StatusLabel.Position = UDim2.new(0, 20, 0, 210)
+    StatusLabel.Position = UDim2.new(0, 20, 0, 220)
     StatusLabel.Size = UDim2.new(1, -40, 0, 30)
     StatusLabel.Font = Enum.Font.GothamBold
     StatusLabel.Text = "Status: Idle"
@@ -413,7 +351,7 @@ local function createGUI()
     
     FieldLabel.Parent = MainFrame
     FieldLabel.BackgroundTransparency = 1
-    FieldLabel.Position = UDim2.new(0, 20, 0, 240)
+    FieldLabel.Position = UDim2.new(0, 20, 0, 250)
     FieldLabel.Size = UDim2.new(1, -40, 0, 30)
     FieldLabel.Font = Enum.Font.Gotham
     FieldLabel.Text = "Current Field: None"
@@ -484,62 +422,6 @@ local function createGUI()
     CloseButton.MouseButton1Click:Connect(function()
         config.isRunning = false
         ScreenGui:Destroy()
-    end)
-    
-    -- Debug button to find all stingers
-    DebugButton.MouseButton1Click:Connect(function()
-        print("🔍 DEBUG: Scanning for all Stinger objects...")
-        
-        local stingerInfo = {}
-        local count = 0
-        
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj.Name == "Stinger" and obj:IsA("BasePart") then
-                count = count + 1
-                local info = string.format(
-                    "**Stinger #%d**\nPosition: `%s`\nParent: `%s`\nClass: `%s`\nSize: `%s`\nTransparency: `%.2f`",
-                    count,
-                    tostring(obj.Position),
-                    obj.Parent and obj.Parent.Name or "nil",
-                    obj.ClassName,
-                    tostring(obj.Size),
-                    obj.Transparency
-                )
-                table.insert(stingerInfo, info)
-                
-                print("Found Stinger #" .. count)
-                print("  Position:", obj.Position)
-                print("  Parent:", obj.Parent and obj.Parent.Name or "nil")
-                print("  Class:", obj.ClassName)
-            end
-        end
-        
-        if count > 0 then
-            -- Send to webhook with all stinger data
-            local description = count .. " Stinger object(s) found in Workspace:\n\n" .. table.concat(stingerInfo, "\n\n")
-            
-            sendWebhook(
-                "🔍 DEBUG: All Stingers Found",
-                description,
-                0xFFA500,
-                {}
-            )
-            
-            StatusLabel.Text = "Status: Found " .. count .. " stinger(s) - Check webhook!"
-            StatusLabel.TextColor3 = Color3.fromRGB(255, 165, 0)
-        else
-            sendWebhook(
-                "🔍 DEBUG: No Stingers Found",
-                "No objects named 'Stinger' were found in Workspace.",
-                0x808080,
-                {}
-            )
-            
-            StatusLabel.Text = "Status: No stingers found"
-            StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        end
-        
-        print("🔍 DEBUG: Scan complete - " .. count .. " stinger(s) found")
     end)
     
     -- Update field label
