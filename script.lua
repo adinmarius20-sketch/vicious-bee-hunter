@@ -251,13 +251,9 @@ local function mainLoop()
     while config.isRunning do
         local found, fieldName = checkForStinger()
         
-        if not found and not config.stingerDetected then
-            wait(config.serverHopDelay)
-            if config.isRunning and not config.stingerDetected then
-                serverHopPublic()
-                break
-            end
-        end
+        if not found then
+    -- Do nothing, just keep scanning this server
+    end
         
         wait(config.checkInterval)
     end
