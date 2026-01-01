@@ -303,6 +303,7 @@ local function createGUI()
     local FieldLabel = Instance.new("TextLabel")
     local CloseButton = Instance.new("TextButton")
     local AutoStartCheckbox = Instance.new("TextButton")
+    local DebugButton = Instance.new("TextButton")
     
     ScreenGui.Name = "ViciousBeeHunterGUI"
     ScreenGui.Parent = CoreGui
@@ -312,8 +313,8 @@ local function createGUI()
     MainFrame.Parent = ScreenGui
     MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     MainFrame.BorderSizePixel = 0
-    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -170)
-    MainFrame.Size = UDim2.new(0, 400, 0, 340)
+    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -180)
+    MainFrame.Size = UDim2.new(0, 400, 0, 370)
     MainFrame.Active = true
     MainFrame.Draggable = true
     
@@ -364,10 +365,21 @@ local function createGUI()
     
     Instance.new("UICorner", AutoStartCheckbox)
     
+    DebugButton.Parent = MainFrame
+    DebugButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+    DebugButton.Position = UDim2.new(0, 20, 0, 285)
+    DebugButton.Size = UDim2.new(1, -40, 0, 35)
+    DebugButton.Font = Enum.Font.GothamBold
+    DebugButton.Text = "🔍 DEBUG: Find All Stingers"
+    DebugButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    DebugButton.TextSize = 14
+    
+    Instance.new("UICorner", DebugButton)
+    
     StartButton.Parent = MainFrame
     StartButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
     StartButton.Position = UDim2.new(0, 20, 0, 160)
-    StartButton.Size = UDim2.new(1, -40, 0, 45)
+    StartButton.Size = UDim2.new(1, -40, 0, 40)
     StartButton.Font = Enum.Font.GothamBold
     StartButton.Text = "START HUNTING"
     StartButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -377,7 +389,7 @@ local function createGUI()
     
     StatusLabel.Parent = MainFrame
     StatusLabel.BackgroundTransparency = 1
-    StatusLabel.Position = UDim2.new(0, 20, 0, 220)
+    StatusLabel.Position = UDim2.new(0, 20, 0, 210)
     StatusLabel.Size = UDim2.new(1, -40, 0, 30)
     StatusLabel.Font = Enum.Font.GothamBold
     StatusLabel.Text = "Status: Idle"
@@ -387,7 +399,7 @@ local function createGUI()
     
     FieldLabel.Parent = MainFrame
     FieldLabel.BackgroundTransparency = 1
-    FieldLabel.Position = UDim2.new(0, 20, 0, 250)
+    FieldLabel.Position = UDim2.new(0, 20, 0, 240)
     FieldLabel.Size = UDim2.new(1, -40, 0, 30)
     FieldLabel.Font = Enum.Font.Gotham
     FieldLabel.Text = "Current Field: None"
@@ -458,6 +470,62 @@ local function createGUI()
     CloseButton.MouseButton1Click:Connect(function()
         config.isRunning = false
         ScreenGui:Destroy()
+    end)
+    
+    -- Debug button to find all stingers
+    DebugButton.MouseButton1Click:Connect(function()
+        print("🔍 DEBUG: Scanning for all Stinger objects...")
+        
+        local stingerInfo = {}
+        local count = 0
+        
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj.Name == "Stinger" and obj:IsA("BasePart") then
+                count = count + 1
+                local info = string.format(
+                    "**Stinger #%d**\nPosition: `%s`\nParent: `%s`\nClass: `%s`\nSize: `%s`\nTransparency: `%.2f`",
+                    count,
+                    tostring(obj.Position),
+                    obj.Parent and obj.Parent.Name or "nil",
+                    obj.ClassName,
+                    tostring(obj.Size),
+                    obj.Transparency
+                )
+                table.insert(stingerInfo, info)
+                
+                print("Found Stinger #" .. count)
+                print("  Position:", obj.Position)
+                print("  Parent:", obj.Parent and obj.Parent.Name or "nil")
+                print("  Class:", obj.ClassName)
+            end
+        end
+        
+        if count > 0 then
+            -- Send to webhook with all stinger data
+            local description = count .. " Stinger object(s) found in Workspace:\n\n" .. table.concat(stingerInfo, "\n\n")
+            
+            sendWebhook(
+                "🔍 DEBUG: All Stingers Found",
+                description,
+                0xFFA500,
+                {}
+            )
+            
+            StatusLabel.Text = "Status: Found " .. count .. " stinger(s) - Check webhook!"
+            StatusLabel.TextColor3 = Color3.fromRGB(255, 165, 0)
+        else
+            sendWebhook(
+                "🔍 DEBUG: No Stingers Found",
+                "No objects named 'Stinger' were found in Workspace.",
+                0x808080,
+                {}
+            )
+            
+            StatusLabel.Text = "Status: No stingers found"
+            StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+        end
+        
+        print("🔍 DEBUG: Scan complete - " .. count .. " stinger(s) found")
     end)
     
     -- Update field label
