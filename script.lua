@@ -459,34 +459,35 @@ print("🐝 Vicious Bee Stinger Hunter v2 Loaded!")
 print("📱 Opening GUI...")
 createGUI()
 
--- === DEBUG: Find what spawns when Vicious Bee appears ===
-print("🔍 DEBUG MODE: Monitoring for new objects...")
+-- === DEBUG: Scan for EXISTING objects (if Vicious Bee already spawned) ===
+print("🔍 FULL SCAN MODE: Checking what's already in the game...")
 
--- Method 1: Track EVERYTHING new that spawns
-workspace.DescendantAdded:Connect(function(obj)
-    print("📦 NEW OBJECT ADDED:")
-    print("   Name:", obj.Name)
-    print("   Type:", obj.ClassName)
-    print("   Parent:", obj.Parent and obj.Parent.Name or "None")
-    print("   Full Path:", obj:GetFullName())
-    print("---")
-end)
-
--- Method 2: Scan for high-health mobs (bosses)
 spawn(function()
-    while wait(5) do
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("Model") then
-                local humanoid = obj:FindFirstChildOfClass("Humanoid")
-                if humanoid and humanoid.MaxHealth > 5000 then
-                    print("🐝 HIGH HP MOB FOUND:", obj.Name)
-                    print("   Health:", humanoid.MaxHealth)
-                    print("   Position:", obj:GetPivot().Position)
-                    print("---")
-                end
+    wait(2) -- Give game time to load
+    
+    print("=== SCANNING WORKSPACE ===")
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        -- Look for Models with Humanoids (mobs/NPCs)
+        if obj:IsA("Model") then
+            local humanoid = obj:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                print("🔴 MOB/NPC FOUND:", obj.Name)
+                print("   Max Health:", humanoid.MaxHealth)
+                print("   Current Health:", humanoid.Health)
+                print("   Position:", obj:GetPivot().Position)
+                print("   Parent:", obj.Parent.Name)
+                print("---")
             end
         end
     end
+    
+    print("=== SCAN COMPLETE ===")
+    print("Look for the mob with the highest health or unusual name!")
 end)
 
-print("✅ Debug monitoring active! Wait for Vicious Bee to spawn at night.")
+-- ALSO monitor for new spawns in case it respawns
+workspace.DescendantAdded:Connect(function(obj)
+    print("📦 NEW:", obj.Name, "| Type:", obj.ClassName)
+end)
+
+print("✅ Scanning mode active!")
