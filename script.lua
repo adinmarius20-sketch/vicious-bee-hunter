@@ -274,12 +274,33 @@ local function serverHopPublic()
 end
 
 local function mainLoop()
+    print("🔍 Starting hunt loop...")
+    
     while config.isRunning do
+        print("🔎 Checking for stingers...")
         local found, fieldName = checkForStinger()
         
-        if not found and not config.stingerDetected then
+        if found then
+            print("✅ Stinger detected! Staying in server.")
+            -- Found it! Stay in this server
+            wait(config.checkInterval)
+        else
+            print("❌ No stinger found. Waiting " .. config.serverHopDelay .. " seconds before hopping...")
+            
+            -- Update GUI
+            local gui = CoreGui:FindFirstChild("ViciousBeeHunterGUI")
+            if gui and gui:FindFirstChild("MainFrame") then
+                local statusLabel = gui.MainFrame:FindFirstChild("StatusLabel")
+                if statusLabel then
+                    statusLabel.Text = "Status: No stinger found, hopping in " .. config.serverHopDelay .. "s..."
+                    statusLabel.TextColor3 = Color3.fromRGB(255, 165, 0)
+                end
+            end
+            
             wait(config.serverHopDelay)
+            
             if config.isRunning and not config.stingerDetected then
+                print("🔄 Server hopping now...")
                 serverHopPublic()
                 break
             end
