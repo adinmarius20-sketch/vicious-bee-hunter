@@ -1,3 +1,4 @@
+
 -- Vicious Bee Stinger Hunter Script v2 - FIXED
 -- Compatible with Delta Executor
 
