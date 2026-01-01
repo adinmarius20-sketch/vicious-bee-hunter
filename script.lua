@@ -9,8 +9,25 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 
+local request = request or http_request or syn.request
+
 local player = Players.LocalPlayer
 local PLACE_ID = 1537690962 -- Bee Swarm Simulator
+
+-- 🔁 SCRIPT AUTO-REEXEC (REQUIRED FOR DELTA)
+local SCRIPT_RAW_URL = "https://raw.githubusercontent.com/adinmarius20-sketch/vicious-bee-hunter/main/script.lua"
+
+local function queueScript()
+    if queue_on_teleport then
+        queue_on_teleport(
+            [[ loadstring(game:HttpGet("]] .. SCRIPT_RAW_URL .. [["))() ]]
+        )
+    elseif syn and syn.queue_on_teleport then
+        syn.queue_on_teleport(
+            [[ loadstring(game:HttpGet("]] .. SCRIPT_RAW_URL .. [["))() ]]
+        )
+    end
+end
 
 -- Configuration with saved webhook
 local config = {
@@ -192,10 +209,12 @@ local function serverHopPublic()
                 print("✅ Found public server:", randomServer.id)
                 
                 -- Teleport to that specific server
+                queueScript() -- 🔁 re-exec after teleport
                 TeleportService:TeleportToPlaceInstance(PLACE_ID, randomServer.id, player)
             else
                 print("⚠️ No available servers, using fallback teleport")
                 wait(2)
+                queueScript() -- 🔁 re-exec after teleport
                 TeleportService:Teleport(PLACE_ID, player)
             end
         end
@@ -205,6 +224,7 @@ local function serverHopPublic()
         warn("Server hop failed, using fallback:", result)
         wait(2)
         -- Fallback to regular teleport
+        queueScript()
         TeleportService:Teleport(PLACE_ID, player)
     end
 end
@@ -447,10 +467,26 @@ local function createGUI()
     end)
     
     -- Auto-start if enabled
-    if autoStartEnabled and config.webhookUrl ~= "" then
-        wait(1)
-        StartButton.MouseButton1Click:Connect(function() end)
-        StartButton:FindFirstChild("MouseButton1Click"):Fire()
+        if autoStartEnabled and config.webhookUrl ~= "" then
+            wait(1)
+            if autoStartEnabled and config.webhookUrl ~= "" then
+        task.delay(1, function()
+            if not config.isRunning then
+                config.isRunning = true
+                StatusLabel.Text = "Status: 🔍 Hunting (Public Servers)..."
+                StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    
+                sendWebhook(
+                    "🚀 Hunter Started",
+                    "Vicious Bee detection auto-started after teleport",
+                    0x00AAFF,
+                    {}
+                )
+    
+                spawn(mainLoop)
+            end
+        end)
+    end
     end
 end
 
