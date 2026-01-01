@@ -167,67 +167,61 @@ end
 
 -- FIXED: Added missing checkForStinger function
 local function checkForStinger()
-    local stinger, fieldName = findStingerData()
+    local viciousPart, fieldName = findStingerData()
     
-    if stinger then
-        -- Verify stinger still exists and has a parent
-        if not stinger.Parent or stinger.Parent == nil then
-            print("⚠️ Stinger found but already removed/destroyed")
-            return false, nil
-        end
-        
-        config.stingerDetected = true
-        config.currentField = fieldName
-        
-        local char = player.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        local distance = "Unknown"
-        
-        if hrp then
-            distance = math.floor((hrp.Position - stinger.Position).Magnitude) .. " studs"
-        end
-        
-        -- DEBUG: Check if stinger is actually accessible
-        local isAccessible = stinger.Parent and stinger.Transparency < 1
-        print("🐝 STINGER FOUND!")
-        print("  Position:", stinger.Position)
-        print("  Parent exists:", stinger.Parent ~= nil)
-        print("  Transparency:", stinger.Transparency)
-        print("  Can collide:", stinger.CanCollide)
-        
-        -- DEBUG: Print stinger position to find correct field coords
-        print("🐝 CLOSEST FIELD CHECK:")
-        for name, pos in pairs(fields) do
-            local dist = (stinger.Position - pos).Magnitude
-            if dist < 400 then
-                print("  " .. name .. ": " .. math.floor(dist) .. " studs")
+    if viciousPart then
+        if not config.stingerDetected then
+            config.stingerDetected = true
+            config.currentField = fieldName
+            
+            local char = player.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local distance = "Unknown"
+            
+            if hrp then
+                distance = math.floor((hrp.Position - viciousPart.Position).Magnitude) .. " studs"
             end
-        end
-        
-        sendWebhook(
-            "🎯 VICIOUS BEE FOUND!",
-            "A Vicious Bee stinger has been detected!",
-            0xFF0000,
-            {
-                {name = "📍 Field", value = fieldName, inline = true},
-                {name = "📏 Distance", value = distance, inline = true},
-                {name = "🌐 Server ID", value = game.JobId, inline = false},
-                {name = "🎯 Stinger Position", value = tostring(stinger.Position), inline = false}
-            }
-        )
-        
-        -- Update GUI status
-        local gui = CoreGui:FindFirstChild("ViciousBeeHunterGUI")
-        if gui and gui:FindFirstChild("MainFrame") then
-            local statusLabel = gui.MainFrame:FindFirstChild("StatusLabel")
-            if statusLabel then
-                statusLabel.Text = "Status: 🎯 VICIOUS BEE FOUND!"
-                statusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+            
+            sendWebhook(
+                "🎯 VICIOUS BEE FOUND!",
+                "A Vicious Bee has been detected!",
+                0xFF0000,
+                {
+                    {name = "📍 Field", value = fieldName, inline = true},
+                    {name = "📏 Distance", value = distance, inline = true},
+                    {name = "🌐 Server ID", value = game.JobId, inline = false}
+                }
+            )
+            
+            -- Update GUI status
+            local gui = CoreGui:FindFirstChild("ViciousBeeHunterGUI")
+            if gui and gui:FindFirstChild("MainFrame") then
+                local statusLabel = gui.MainFrame:FindFirstChild("StatusLabel")
+                if statusLabel then
+                    statusLabel.Text = "Status: 🎯 VICIOUS BEE FOUND!"
+                    statusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+                end
             end
+            
+            print("🎯 VICIOUS BEE FOUND IN:", fieldName)
         end
-        
-        print("🎯 VICIOUS BEE FOUND IN:", fieldName)
         return true, fieldName
+    else
+        -- Vicious Bee despawned or defeated
+        if config.stingerDetected then
+            sendWebhook(
+                "✅ Vicious Bee Defeated/Despawned",
+                "The Vicious Bee is no longer present. Continuing search...",
+                0x00FF00,
+                {
+                    {name = "Previous Field", value = config.currentField, inline = true}
+                }
+            )
+            
+            config.stingerDetected = false
+            config.currentField = "None"
+            print("✅ Vicious Bee gone.")
+        end
     end
     
     return false, nil
