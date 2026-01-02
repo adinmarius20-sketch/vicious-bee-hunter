@@ -1,77 +1,21 @@
--- Vicious Bee Stinger Hunter Script v2 - FIXED
--- Compatible with Delta Executor
+-- Vicious Bee Stinger Hunter Script v3.0 - STAY IN SERVER
+-- Detects stinger when it spawns - NO SERVER HOPPING
 
-local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 
-local function onNewObject(obj)
-    print("🧪 New object:", obj:GetFullName())
-    if not config.isRunning then return end
-    if not obj:IsA("BasePart") then return end
-
-    -- Filter possible stingers (name OR parent)
-    local name = obj.Name:lower()
-    if not (name:find("stinger") or name:find("spike")) then
-        return
-    end
-
-    -- Ignore fully invisible junk if needed
-
-    -- Find closest field
-    local closestField = "Unknown"
-    local closestDistance = math.huge
-
-    for fieldName, pos in pairs(fields) do
-        local dist = (obj.Position - pos).Magnitude
-        if dist < closestDistance then
-            closestDistance = dist
-            closestField = fieldName
-        end
-    end
-
-    config.stingerDetected = true
-    config.currentField = closestField
-
-    sendWebhook(
-        "🆕 OBJECT SPAWNED",
-        "A new suspicious part appeared in the world",
-        0xFFCC00,
-        {
-            { name = "📦 Name", value = obj.Name, inline = true },
-            { name = "📍 Field", value = closestField, inline = true },
-            { name = "📏 Distance", value = math.floor(closestDistance) .. " studs", inline = true },
-            { name = "🧭 Position", value = tostring(obj.Position), inline = false }
-        }
-    )
-
-    print("🆕 Detected new part:", obj:GetFullName())
-end
-
 local request = request or http_request or syn.request
-
 local player = Players.LocalPlayer
-local PLACE_ID = 1537690962
-
-local SCRIPT_RAW_URL = "https://raw.githubusercontent.com/adinmarius20-sketch/vicious-bee-hunter/main/script.lua"
-
-local function queueScript()
-    if queue_on_teleport then
-        queue_on_teleport([[ loadstring(game:HttpGet("]] .. SCRIPT_RAW_URL .. [["))() ]])
-    elseif syn and syn.queue_on_teleport then
-        syn.queue_on_teleport([[ loadstring(game:HttpGet("]] .. SCRIPT_RAW_URL .. [["))() ]])
-    end
-end
 
 local config = {
     webhookUrl = "",
-    checkInterval = 3,
-    serverHopDelay = 8,
     isRunning = false,
     stingerDetected = false,
-    currentField = "None"
+    currentField = "None",
+    _descendantConnection = nil,
+    _detectedStingers = {}
 }
 
 -- Load saved webhook
@@ -129,177 +73,156 @@ local function sendWebhook(title, description, color, webhookFields)
     end
 end
 
--- FIXED: Improved stinger detection
-local function findStingerData()
-    -- Specific stinger to ignore
-    local ignorePosition = Vector3.new(125.85546875, 41.43798065185547, 427.93963623046875)
-    local ignoreRadius = 1 -- small tolerance
-
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name == "Stinger" then
-            -- Skip this stinger if it matches the ignore position
-            if (obj.Position - ignorePosition).Magnitude <= ignoreRadius then
-                print("⚠️ Ignoring Stinger at:", obj.Position)
-            else
-                -- Only return if it's NOT the ignored stinger
-                local fieldName = "Unknown"
-                local parent = obj.Parent
-                
-                while parent and parent ~= Workspace do
-                    if fields[parent.Name] then
-                        fieldName = parent.Name
-                        break
-                    end
-                    parent = parent.Parent
-                end
-                
-                if fieldName == "Unknown" then
-                    local closestField = nil
-                    local closestDistance = math.huge
-                    
-                    for name, pos in pairs(fields) do
-                        local distance = (obj.Position - pos).Magnitude
-                        if distance < closestDistance then
-                            closestDistance = distance
-                            closestField = name
-                        end
-                    end
-                    
-                    if closestField and closestDistance < 300 then
-                        fieldName = closestField .. " (~" .. math.floor(closestDistance) .. " studs)"
-                    end
-                end
-                
-                return obj, fieldName
-            end
+local function getClosestField(position)
+    local closestField = "Unknown"
+    local closestDistance = math.huge
+    
+    for fieldName, fieldPos in pairs(fields) do
+        local dist = (position - fieldPos).Magnitude
+        if dist < closestDistance then
+            closestDistance = dist
+            closestField = fieldName
         end
     end
-
-    -- Check Monsters folder as backup
-    local monsters = Workspace:FindFirstChild("Monsters")
-    if monsters then
-        for _, mob in ipairs(monsters:GetChildren()) do
-            if mob.Name:lower():find("vicious") then
-                local stinger = mob:FindFirstChild("Stinger", true)
-                if stinger then
-                    if (stinger.Position - ignorePosition).Magnitude <= ignoreRadius then
-                        print("⚠️ Ignoring Stinger in Monsters at:", stinger.Position)
-                    else
-                        local closestField = "Unknown"
-                        local closestDistance = math.huge
-                        
-                        for name, pos in pairs(fields) do
-                            local distance = (mob:GetPivot().Position - pos).Magnitude
-                            if distance < closestDistance then
-                                closestDistance = distance
-                                closestField = name
-                            end
-                        end
-                        
-                        return stinger, closestField
-                    end
-                end
-            end
-        end
-    end
-
-    return nil, nil
+    
+    return closestField, closestDistance
 end
 
--- FIXED: Added missing checkForStinger function
-local function checkForStinger()
-    local stinger, fieldName = findStingerData()
+-- MAIN DETECTION: Check if object could be a stinger
+local function couldBeStinger(obj)
+    if not obj or not obj:IsA("BasePart") then return false end
     
-    if stinger then
-        config.stingerDetected = true
-        config.currentField = fieldName
-        
-        local char = player.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        local distance = "Unknown"
-        
+    local name = obj.Name:lower()
+    
+    -- Check for stinger/spike/cone in name
+    if name:find("stinger") or name:find("spike") or name:find("cone") then
+        print("✅ Name match:", obj.Name)
+        return true
+    end
+    
+    -- Check for cone/cylinder shapes (common for stingers)
+    if obj:IsA("Part") then
+        if obj.Shape == Enum.PartType.Cylinder or obj.Shape == Enum.PartType.Ball then
+            print("✅ Shape match:", obj.Shape)
+            return true
+        end
+    end
+    
+    -- Check if it has a mesh that could be cone-shaped
+    local mesh = obj:FindFirstChildOfClass("SpecialMesh") or obj:FindFirstChildOfClass("Mesh")
+    if mesh then
+        print("✅ Has mesh:", mesh.ClassName)
+        -- Any mesh could potentially be the stinger
+        return true
+    end
+    
+    -- Check size - stingers are usually tall and pointy
+    if obj.Size.Y > 3 and (obj.Size.Y > obj.Size.X * 1.5 or obj.Size.Y > obj.Size.Z * 1.5) then
+        print("✅ Size match - tall object:", obj.Size)
+        return true
+    end
+    
+    return false
+end
+
+-- IMPROVED: Detect new objects spawning ANYWHERE in the game
+local function onNewObject(obj)
+    if not config.isRunning then return end
+    
+    -- Small delay to let object fully load
+    task.wait(0.05)
+    
+    if not obj or not obj.Parent then return end
+    
+    -- Only check BaseParts (physical objects)
+    if not obj:IsA("BasePart") then return end
+    
+    print("🔍 NEW OBJECT SPAWNED:", obj:GetFullName())
+    print("   Type:", obj.ClassName)
+    print("   Name:", obj.Name)
+    print("   Parent:", obj.Parent:GetFullName())
+    print("   Size:", obj.Size)
+    print("   Position:", obj.Position)
+    print("   Transparency:", obj.Transparency)
+    
+    -- Check if it could be a stinger
+    if not couldBeStinger(obj) then 
+        print("   ❌ Not a stinger")
+        return 
+    end
+    
+    -- Avoid duplicate alerts
+    if config._detectedStingers[obj] then 
+        print("   ⚠️ Already detected")
+        return 
+    end
+    
+    print("   ⭐ POSSIBLE STINGER DETECTED!")
+    
+    config._detectedStingers[obj] = true
+    
+    -- Get field location
+    local closestField, distance = getClosestField(obj.Position)
+    
+    config.stingerDetected = true
+    config.currentField = closestField
+    
+    -- Get player distance
+    local playerDistance = "Unknown"
+    local char = player.Character
+    if char then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
         if hrp then
-            distance = math.floor((hrp.Position - stinger.Position).Magnitude) .. " studs"
+            playerDistance = math.floor((hrp.Position - obj.Position).Magnitude) .. " studs"
         end
-        
-        sendWebhook(
-            "🎯 VICIOUS BEE FOUND!",
-            "A Vicious Bee stinger has been detected!",
-            0xFF0000,
-            {
-                {name = "📍 Field", value = fieldName, inline = true},
-                {name = "📏 Distance", value = distance, inline = true},
-                {name = "🌐 Server ID", value = game.JobId, inline = false}
-            }
-        )
-        
-        -- Update GUI status
-        local gui = CoreGui:FindFirstChild("ViciousBeeHunterGUI")
-        if gui and gui:FindFirstChild("MainFrame") then
-            local statusLabel = gui.MainFrame:FindFirstChild("StatusLabel")
-            if statusLabel then
-                statusLabel.Text = "Status: 🎯 VICIOUS BEE FOUND!"
-                statusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
-            end
-        end
-        
-        print("🎯 VICIOUS BEE FOUND IN:", fieldName)
-        return true, fieldName
     end
     
-    return false, nil
-end
-
-local function serverHopPublic()
+    -- Send webhook
     sendWebhook(
-        "🔄 Server Hopping",
-        "No Vicious Bee found. Searching next public server...",
-        0xFFA500,
-        {}
+        "🎯 POSSIBLE VICIOUS BEE STINGER!",
+        "A suspicious object has spawned that could be the Vicious Bee stinger!",
+        0xFF0000,
+        {
+            { name = "📦 Object Name", value = obj.Name, inline = true },
+            { name = "🔧 Type", value = obj.ClassName, inline = true },
+            { name = "📍 Field", value = closestField, inline = true },
+            { name = "📏 Field Distance", value = math.floor(distance) .. " studs", inline = true },
+            { name = "👤 Player Distance", value = playerDistance, inline = true },
+            { name = "📐 Size", value = string.format("%.1f, %.1f, %.1f", obj.Size.X, obj.Size.Y, obj.Size.Z), inline = false },
+            { name = "🧭 Position", value = string.format("(%.1f, %.1f, %.1f)", obj.Position.X, obj.Position.Y, obj.Position.Z), inline = false },
+            { name = "🌐 Server ID", value = game.JobId, inline = false }
+        }
     )
     
-    print("🔄 Searching for public servers...")
-    
-    local success = pcall(function()
-        local url = "https://games.roblox.com/v1/games/" .. PLACE_ID .. "/servers/Public?sortOrder=Asc&limit=100"
-        local data = HttpService:JSONDecode(game:HttpGet(url))
+    -- Update GUI
+    local gui = CoreGui:FindFirstChild("ViciousBeeHunterGUI")
+    if gui and gui:FindFirstChild("MainFrame") then
+        local statusLabel = gui.MainFrame:FindFirstChild("StatusLabel")
+        if statusLabel then
+            statusLabel.Text = "Status: 🎯 STINGER DETECTED!"
+            statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+        end
         
-        if data and data.data then
-            local validServers = {}
-            for _, server in pairs(data.data) do
-                if server.playing < server.maxPlayers and server.id ~= game.JobId then
-                    table.insert(validServers, server)
-                end
-            end
-            
-            if #validServers > 0 then
-                local randomServer = validServers[math.random(1, #validServers)]
-                print("✅ Found server:", randomServer.id)
-                queueScript()
-                TeleportService:TeleportToPlaceInstance(PLACE_ID, randomServer.id, player)
-                return
-            end
+        local fieldLabel = gui.MainFrame:FindFirstChild("FieldLabel")
+        if fieldLabel then
+            fieldLabel.Text = "Field: 🐝 " .. closestField
+            fieldLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+        end
+    end
+    
+    print("🎯 STINGER ALERT SENT!")
+    print("📍 Field:", closestField)
+    print("📏 Distance:", distance, "studs")
+    
+    -- Clean up when removed
+    obj.AncestryChanged:Connect(function()
+        if not obj.Parent then
+            print("⚠️ Stinger removed from workspace")
+            config._detectedStingers[obj] = nil
+            config.stingerDetected = false
+            config.currentField = "None"
         end
     end)
-    
-    if not success then
-        warn("Fallback teleport")
-        wait(2)
-        queueScript()
-        TeleportService:Teleport(PLACE_ID, player)
-    end
-end
-
-local function mainLoop()
-    while config.isRunning do
-        local found, fieldName = checkForStinger()
-        
-        if not found then
-    -- Do nothing, just keep scanning this server
-    end
-        
-        wait(config.checkInterval)
-    end
 end
 
 local function createGUI()
@@ -314,8 +237,8 @@ local function createGUI()
     local StartButton = Instance.new("TextButton")
     local StatusLabel = Instance.new("TextLabel")
     local FieldLabel = Instance.new("TextLabel")
+    local InfoLabel = Instance.new("TextLabel")
     local CloseButton = Instance.new("TextButton")
-    local AutoStartCheckbox = Instance.new("TextButton")
     
     ScreenGui.Name = "ViciousBeeHunterGUI"
     ScreenGui.Parent = CoreGui
@@ -325,8 +248,8 @@ local function createGUI()
     MainFrame.Parent = ScreenGui
     MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     MainFrame.BorderSizePixel = 0
-    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -170)
-    MainFrame.Size = UDim2.new(0, 400, 0, 340)
+    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -150)
+    MainFrame.Size = UDim2.new(0, 400, 0, 300)
     MainFrame.Active = true
     MainFrame.Draggable = true
     
@@ -336,7 +259,7 @@ local function createGUI()
     Title.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
     Title.Size = UDim2.new(1, 0, 0, 50)
     Title.Font = Enum.Font.GothamBold
-    Title.Text = "🐝 Vicious Bee Hunter (Public Servers)"
+    Title.Text = "🐝 Vicious Bee Stinger Detector"
     Title.TextColor3 = Color3.fromRGB(20, 20, 20)
     Title.TextSize = 17
     
@@ -366,23 +289,12 @@ local function createGUI()
     
     Instance.new("UICorner", WebhookBox).CornerRadius = UDim.new(0, 8)
     
-    AutoStartCheckbox.Parent = MainFrame
-    AutoStartCheckbox.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-    AutoStartCheckbox.Position = UDim2.new(0, 20, 0, 120)
-    AutoStartCheckbox.Size = UDim2.new(1, -40, 0, 30)
-    AutoStartCheckbox.Font = Enum.Font.Gotham
-    AutoStartCheckbox.Text = "⬜ Auto-Start on Execute (Click to Enable)"
-    AutoStartCheckbox.TextColor3 = Color3.fromRGB(200, 200, 200)
-    AutoStartCheckbox.TextSize = 12
-    
-    Instance.new("UICorner", AutoStartCheckbox)
-    
     StartButton.Parent = MainFrame
     StartButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    StartButton.Position = UDim2.new(0, 20, 0, 160)
+    StartButton.Position = UDim2.new(0, 20, 0, 125)
     StartButton.Size = UDim2.new(1, -40, 0, 45)
     StartButton.Font = Enum.Font.GothamBold
-    StartButton.Text = "START HUNTING"
+    StartButton.Text = "START DETECTING"
     StartButton.TextColor3 = Color3.fromRGB(255, 255, 255)
     StartButton.TextSize = 16
     
@@ -390,8 +302,8 @@ local function createGUI()
     
     StatusLabel.Parent = MainFrame
     StatusLabel.BackgroundTransparency = 1
-    StatusLabel.Position = UDim2.new(0, 20, 0, 220)
-    StatusLabel.Size = UDim2.new(1, -40, 0, 30)
+    StatusLabel.Position = UDim2.new(0, 20, 0, 185)
+    StatusLabel.Size = UDim2.new(1, -40, 0, 25)
     StatusLabel.Font = Enum.Font.GothamBold
     StatusLabel.Text = "Status: Idle"
     StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -400,40 +312,24 @@ local function createGUI()
     
     FieldLabel.Parent = MainFrame
     FieldLabel.BackgroundTransparency = 1
-    FieldLabel.Position = UDim2.new(0, 20, 0, 250)
-    FieldLabel.Size = UDim2.new(1, -40, 0, 30)
+    FieldLabel.Position = UDim2.new(0, 20, 0, 210)
+    FieldLabel.Size = UDim2.new(1, -40, 0, 25)
     FieldLabel.Font = Enum.Font.Gotham
-    FieldLabel.Text = "Current Field: None"
+    FieldLabel.Text = "Field: Waiting..."
     FieldLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
     FieldLabel.TextSize = 13
     FieldLabel.TextXAlignment = Enum.TextXAlignment.Left
     
-    -- Load auto-start setting
-    local autoStartEnabled = false
-    if isfile and readfile and isfile("vicious_bee_autostart.txt") then
-        autoStartEnabled = readfile("vicious_bee_autostart.txt") == "true"
-    end
-    
-    if autoStartEnabled then
-        AutoStartCheckbox.Text = "✅ Auto-Start on Execute (Enabled)"
-        AutoStartCheckbox.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
-    end
-    
-    AutoStartCheckbox.MouseButton1Click:Connect(function()
-        autoStartEnabled = not autoStartEnabled
-        
-        if autoStartEnabled then
-            AutoStartCheckbox.Text = "✅ Auto-Start on Execute (Enabled)"
-            AutoStartCheckbox.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
-        else
-            AutoStartCheckbox.Text = "⬜ Auto-Start on Execute (Click to Enable)"
-            AutoStartCheckbox.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-        end
-        
-        if writefile then
-            writefile("vicious_bee_autostart.txt", tostring(autoStartEnabled))
-        end
-    end)
+    InfoLabel.Parent = MainFrame
+    InfoLabel.BackgroundTransparency = 1
+    InfoLabel.Position = UDim2.new(0, 20, 0, 240)
+    InfoLabel.Size = UDim2.new(1, -40, 0, 45)
+    InfoLabel.Font = Enum.Font.Gotham
+    InfoLabel.Text = "💡 Monitors ENTIRE GAME for stinger spawns anywhere"
+    InfoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    InfoLabel.TextSize = 11
+    InfoLabel.TextWrapped = true
+    InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
     
     StartButton.MouseButton1Click:Connect(function()
         if not config.isRunning then
@@ -452,63 +348,54 @@ local function createGUI()
             end
             
             config.isRunning = true
+            
+            -- Connect the listener for new objects EVERYWHERE in the game
             if not config._descendantConnection then
-                config._descendantConnection =
-                    Workspace.DescendantAdded:Connect(onNewObject)
+                config._descendantConnection = game.DescendantAdded:Connect(onNewObject)
+                print("✅ Monitoring ENTIRE GAME for new objects...")
             end
-            StartButton.Text = "STOP HUNTING"
+            
+            StartButton.Text = "STOP DETECTING"
             StartButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-            StatusLabel.Text = "Status: 🔍 Hunting (Public Servers)..."
+            StatusLabel.Text = "Status: 👀 Watching for stingers..."
             StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
             
-            sendWebhook("🚀 Hunter Started", "Vicious Bee detection is now active!", 0x00AAFF, {})
-            spawn(mainLoop)
+            sendWebhook(
+                "🚀 Detection Started", 
+                "Now monitoring for Vicious Bee stinger spawns in this server!", 
+                0x00AAFF, 
+                {{name = "🌐 Server ID", value = game.JobId, inline = false}}
+            )
+            
+            print("🎯 DETECTION ACTIVE - Watching for new objects...")
         else
             config.isRunning = false
-            StartButton.Text = "START HUNTING"
+            
+            if config._descendantConnection then
+                config._descendantConnection:Disconnect()
+                config._descendantConnection = nil
+                print("✅ Stopped monitoring")
+            end
+            
+            StartButton.Text = "START DETECTING"
             StartButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
             StatusLabel.Text = "Status: Stopped"
             StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+            FieldLabel.Text = "Field: Waiting..."
+            FieldLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
         end
     end)
     
     CloseButton.MouseButton1Click:Connect(function()
         config.isRunning = false
+        if config._descendantConnection then
+            config._descendantConnection:Disconnect()
+        end
         ScreenGui:Destroy()
     end)
-    
-    -- Update field label
-    spawn(function()
-        while wait(0.5) do
-            if not ScreenGui.Parent then break end
-            
-            if config.stingerDetected then
-                FieldLabel.Text = "Current Field: 🐝 " .. config.currentField
-                FieldLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
-            else
-                FieldLabel.Text = "Current Field: None"
-                FieldLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-            end
-        end
-    end)
-    
-    -- FIXED: Auto-start logic
-    if autoStartEnabled and config.webhookUrl ~= "" then
-        task.delay(1, function()
-            if not config.isRunning then
-                config.isRunning = true
-                StartButton.Text = "STOP HUNTING"
-                StartButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-                StatusLabel.Text = "Status: 🔍 Hunting (Public Servers)..."
-                StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-                
-                sendWebhook("🚀 Hunter Started", "Auto-started after teleport", 0x00AAFF, {})
-                spawn(mainLoop)
-            end
-        end)
-    end
 end
 
-print("🐝 Vicious Bee Stinger Hunter v2 Loaded!")
+print("🐝 Vicious Bee Stinger Detector v3.0 Loaded!")
 print("📱 Opening GUI...")
+print("🎯 This script stays in ONE server and watches for stinger spawns!")
 createGUI()
