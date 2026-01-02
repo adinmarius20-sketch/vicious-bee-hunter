@@ -91,69 +91,38 @@ end
 -- MAIN DETECTION: Check if object could be a stinger (STRICT)
 local function couldBeStinger(obj)
     if not obj or not obj:IsA("BasePart") then return false end
-    
-    local name = obj.Name:lower()
-    
-    -- STRICT NAME CHECK - Must have "stinger" or "spike" in the name
-    if name:find("stinger") or name:find("spike") then
-        print("✅ STINGER NAME MATCH:", obj.Name)
+
+    -- Must be anchored and solid
+    if not obj.Anchored or not obj.CanCollide then return false end
+
+    -- Must be near a known field
+    local field, fieldDist = getClosestField(obj.Position)
+    if field == "Unknown" or fieldDist > 120 then return false end
+
+    -- Must be at or slightly below field height (stingers are buried)
+    local fieldY = fields[field].Y
+    if obj.Position.Y > fieldY + 8 or obj.Position.Y < fieldY - 25 then
+        return false
+    end
+
+    -- Size check (real stingers are NOT tall cones)
+    if obj.Size.X < 1.5 or obj.Size.Y < 1.5 or obj.Size.Z < 1.5 then return false end
+    if obj.Size.X > 15 or obj.Size.Y > 15 or obj.Size.Z > 15 then return false end
+
+    -- Dark color check (stingers are dark)
+    local c = obj.Color
+    local brightness = (c.R + c.G + c.B) / 3
+    if brightness > 0.35 then return false end
+
+    -- Mesh-based stingers (this is what Bee Swarm uses)
+    if obj:IsA("MeshPart") or obj:FindFirstChildOfClass("SpecialMesh") then
+        print("✅ STINGER MATCH (mesh-based)")
         return true
     end
-    
-    -- If name doesn't match, it needs to pass MULTIPLE checks:
-    local checks = 0
-    local reasons = {}
-    
-    -- Check 1: Large cone-like size (tall and pointy)
-    -- Stinger might be partially underground, so check if ANY dimension is large
-    if obj.Size.Y > 5 or (obj.Size.Y > 3 and obj.Size.Y > obj.Size.X * 2) then
-        checks = checks + 1
-        table.insert(reasons, "Tall/pointy shape (Y=" .. math.floor(obj.Size.Y) .. ")")
-    end
-    
-    -- Check 2: Has a SpecialMesh with FileMesh (custom model)
-    local mesh = obj:FindFirstChildOfClass("SpecialMesh")
-    if mesh and mesh.MeshType == Enum.MeshType.FileMesh then
-        checks = checks + 1
-        table.insert(reasons, "Custom mesh model")
-    end
-    
-    -- Check 3: Cylinder shape (stingers can be cylinders)
-    if obj:IsA("Part") and obj.Shape == Enum.PartType.Cylinder then
-        checks = checks + 1
-        table.insert(reasons, "Cylinder shape")
-    end
-    
-    -- Check 4: Position could be at/below ground level in a field
-    -- Stinger goes underground, so check Y position between -20 and 120
-    if obj.Position.Y > -20 and obj.Position.Y < 120 then
-        -- Check if it's actually near a field
-        local _, distance = getClosestField(obj.Position)
-        if distance < 150 then
-            checks = checks + 1
-            table.insert(reasons, "Near field (underground/surface)")
-        end
-    end
-    
-    -- Check 5: Check if part of it might be underground (position Y is low)
-    -- If Y position is close to ground level or below, could be partially buried stinger
-    local closestField, fieldDist = getClosestField(obj.Position)
-    if closestField ~= "Unknown" and fieldDist < 100 then
-        -- Check if Y is at or below typical field height
-        local fieldHeight = fields[closestField].Y
-        if obj.Position.Y <= fieldHeight + 10 then
-            checks = checks + 1
-            table.insert(reasons, "At/below field level (partially buried)")
-        end
-    end
-    
-    -- Need at least 2 checks to pass (prevents false positives)
-    if checks >= 2 then
-        print("✅ POSSIBLE STINGER - Passed", checks, "checks:", table.concat(reasons, ", "))
-        return true
-    end
-    
-    return false
+
+    -- Fallback (still matches real stingers)
+    print("⚠️ POSSIBLE STINGER (generic part)")
+    return true
 end
 
 -- IMPROVED: Detect new objects spawning ANYWHERE in the game
