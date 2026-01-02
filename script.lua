@@ -89,36 +89,34 @@ local function getClosestField(position)
 end
 
 -- MAIN DETECTION: Check if object could be a stinger (STRICT)
--- Enhanced Stinger Detection
 local function couldBeStinger(obj)
     if not obj or not obj:IsA("BasePart") then return false end
 
-    -- 1️⃣ First, check for the real trigger part by name
+    -- 1️⃣ Core trigger: always detect
     if obj.Name == "CorePart" then
         print("✅ DETECTED REAL STINGER (CorePart)")
         return true
     end
 
-    -- 2️⃣ Optional: detect decorative/moving spikes
-    local spikeNames = { "Stem", "C" } -- Add more if you notice others
+    -- 2️⃣ Decorative spikes or poking-out parts
+    local spikeNames = {"Stem", "C"} -- add more if needed
     for _, name in ipairs(spikeNames) do
         if obj.Name == name then
-            print("⚠️ Detected decorative spike:", obj.Name)
+            print("⚠️ DETECTED STINGER TIP/POKE-OUT:", obj.Name)
             return true
         end
     end
 
-    -- 3️⃣ Mesh-based fallback (in case future stingers use MeshParts)
+    -- 3️⃣ Mesh fallback: in case stinger uses MeshPart or SpecialMesh
     if obj:IsA("MeshPart") or obj:FindFirstChildOfClass("SpecialMesh") then
         print("⚠️ POSSIBLE STINGER (mesh-based):", obj.Name)
         return true
     end
 
-    -- 4️⃣ Optional lenient check for any BasePart near a field
+    -- 4️⃣ Lenient fallback: any BasePart near a known field
     local field, distance = getClosestField(obj.Position)
     if field ~= "Unknown" and distance < 120 then
-        -- Small, anchored parts could be triggers
-        if obj.Anchored and obj.Size.Magnitude < 15 then
+        if obj.Anchored then
             print("⚠️ POSSIBLE STINGER (generic part near field):", obj.Name)
             return true
         end
@@ -126,6 +124,7 @@ local function couldBeStinger(obj)
 
     return false
 end
+
 
 
 
