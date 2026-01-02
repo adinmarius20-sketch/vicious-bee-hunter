@@ -88,37 +88,68 @@ local function getClosestField(position)
     return closestField, closestDistance
 end
 
--- MAIN DETECTION: Check if object could be a stinger
+-- MAIN DETECTION: Check if object could be a stinger (STRICT)
 local function couldBeStinger(obj)
     if not obj or not obj:IsA("BasePart") then return false end
     
     local name = obj.Name:lower()
     
-    -- Check for stinger/spike/cone in name
-    if name:find("stinger") or name:find("spike") or name:find("cone") then
-        print("✅ Name match:", obj.Name)
+    -- STRICT NAME CHECK - Must have "stinger" or "spike" in the name
+    if name:find("stinger") or name:find("spike") then
+        print("✅ STINGER NAME MATCH:", obj.Name)
         return true
     end
     
-    -- Check for cone/cylinder shapes (common for stingers)
-    if obj:IsA("Part") then
-        if obj.Shape == Enum.PartType.Cylinder or obj.Shape == Enum.PartType.Ball then
-            print("✅ Shape match:", obj.Shape)
-            return true
+    -- If name doesn't match, it needs to pass MULTIPLE checks:
+    local checks = 0
+    local reasons = {}
+    
+    -- Check 1: Large cone-like size (tall and pointy)
+    -- Stinger might be partially underground, so check if ANY dimension is large
+    if obj.Size.Y > 5 or (obj.Size.Y > 3 and obj.Size.Y > obj.Size.X * 2) then
+        checks = checks + 1
+        table.insert(reasons, "Tall/pointy shape (Y=" .. math.floor(obj.Size.Y) .. ")")
+    end
+    
+    -- Check 2: Has a SpecialMesh with FileMesh (custom model)
+    local mesh = obj:FindFirstChildOfClass("SpecialMesh")
+    if mesh and mesh.MeshType == Enum.MeshType.FileMesh then
+        checks = checks + 1
+        table.insert(reasons, "Custom mesh model")
+    end
+    
+    -- Check 3: Cylinder shape (stingers can be cylinders)
+    if obj:IsA("Part") and obj.Shape == Enum.PartType.Cylinder then
+        checks = checks + 1
+        table.insert(reasons, "Cylinder shape")
+    end
+    
+    -- Check 4: Position could be at/below ground level in a field
+    -- Stinger goes underground, so check Y position between -20 and 120
+    if obj.Position.Y > -20 and obj.Position.Y < 120 then
+        -- Check if it's actually near a field
+        local _, distance = getClosestField(obj.Position)
+        if distance < 150 then
+            checks = checks + 1
+            table.insert(reasons, "Near field (underground/surface)")
         end
     end
     
-    -- Check if it has a mesh that could be cone-shaped
-    local mesh = obj:FindFirstChildOfClass("SpecialMesh") or obj:FindFirstChildOfClass("Mesh")
-    if mesh then
-        print("✅ Has mesh:", mesh.ClassName)
-        -- Any mesh could potentially be the stinger
-        return true
+    -- Check 5: Check if part of it might be underground (position Y is low)
+    -- If Y position is close to ground level or below, could be partially buried stinger
+    local closestField, fieldDist = getClosestField(obj.Position)
+    if closestField ~= "Unknown" and fieldDist < 100 then
+        -- Check if Y is at or below typical field height
+        local fieldHeight = fields[closestField].Y
+        if obj.Position.Y <= fieldHeight + 10 then
+            checks = checks + 1
+            table.insert(reasons, "At/below field level (partially buried)")
+        end
     end
     
-    -- Check size - stingers are usually tall and pointy
-    if obj.Size.Y > 3 and (obj.Size.Y > obj.Size.X * 1.5 or obj.Size.Y > obj.Size.Z * 1.5) then
-        print("✅ Size match - tall object:", obj.Size)
+    -- Need at least 2 checks to pass (prevents false positives)
+    if checks >= 2 then
+        print("✅ POSSIBLE STINGER - Passed", checks, "checks:", table.concat(reasons, ", "))
         return true
     end
     
@@ -147,7 +178,7 @@ local function onNewObject(obj)
     
     -- Check if it could be a stinger
     if not couldBeStinger(obj) then 
-        print("   ❌ Not a stinger")
+        -- Don't spam console for every object
         return 
     end
     
