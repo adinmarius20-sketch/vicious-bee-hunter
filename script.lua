@@ -1,4 +1,4 @@
--- Vicious Bee Stinger Hunter Script v3.4 - FIXED JOIN LINKS + SIZE VERIFICATION
+-- Vicious Bee Stinger Hunter Script v3.5 - FIXED CLICKABLE LINKS + SERVER LINK IN LOG
 -- Detects "Thorn" parts (Size: 3×2×1.5) that spawn near fields (ONCE per spawn event)
 
 local HttpService = game:GetService("HttpService")
@@ -13,6 +13,7 @@ local player = Players.LocalPlayer
 
 local config = {
     webhookUrl = "",
+    pcServerUrl = "", -- Your PC's HTTP server URL (e.g., http://192.168.1.100:8080/log)
     isRunning = false,
     stingerDetected = false,
     currentField = "None",
@@ -24,7 +25,9 @@ local config = {
     serverType = "Public",
     privateServerLink = "",
     expectedSize = Vector3.new(3.0, 2.0, 1.5),
-    sizeTolerance = 0.1
+    sizeTolerance = 0.1,
+    stingerActiveTime = 240, -- 4 minutes in seconds
+    _activeStatusTimer = nil
 }
 
 -- Load saved webhook
@@ -33,6 +36,15 @@ if isfile and readfile and isfile("vicious_bee_webhook.txt") then
     if saved and saved ~= "" then
         config.webhookUrl = saved
         print("✅ Loaded saved webhook")
+    end
+end
+
+-- Load saved PC server URL
+if isfile and readfile and isfile("vicious_bee_pcserver.txt") then
+    local saved = readfile("vicious_bee_pcserver.txt")
+    if saved and saved ~= "" then
+        config.pcServerUrl = saved
+        print("✅ Loaded saved PC server URL")
     end
 end
 
@@ -135,6 +147,158 @@ local function verifySizeMatch(objSize)
            math.abs(objSize.Z - config.expectedSize.Z) <= config.sizeTolerance
 end
 
+local function generateJoinLink()
+    -- Generate proper clickable join link
+    if config.serverType == "Private" and config.privateServerLink ~= "" then
+        return config.privateServerLink
+    else
+        local placeId = game.PlaceId
+        local jobId = game.JobId
+        -- This format works for clicking from Discord
+        return string.format("https://www.roblox.com/games/start?placeId=%d&launchData=%%7B%%22gameId%%22%%3A%%22%s%%22%%7D", placeId, jobId)
+    end
+end
+
+local function updateStingerLog(playerName, field, status, joinLink)
+    -- Send to PC server if URL is configured
+    if config.pcServerUrl ~= "" then
+        local logData = {
+            player = playerName,
+            field = field,
+            status = status,
+            timestamp = os.time(),
+            detectionTime = os.time(),
+            serverLink = joinLink or "N/A"
+        }
+        
+        local success, err = pcall(function()
+            request({
+                Url = config.pcServerUrl,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = HttpService:JSONEncode(logData)
+            })
+        end)
+        
+        if success then
+            print("✅ Log sent to PC server:", playerName, "-", field, "-", status)
+        else
+            warn("❌ Failed to send log to PC:", err)
+        end
+    end
+    
+    -- Still save locally as backup
+    if not writefile or not readfile or not isfile then
+        return
+    end
+    
+    local logData = {}
+    
+    if isfile("vicious_bee_stinger_log.txt") then
+        local success, result = pcall(function()
+            local content = readfile("vicious_bee_stinger_log.txt")
+            if content and content ~= "" then
+                return HttpService:JSONDecode(content)
+            end
+        end)
+        if success and result then
+            logData = result
+        end
+    end
+    
+    local timestamp = os.time()
+    logData[playerName] = {
+        Field = field,
+        Status = status,
+        LastUpdate = timestamp,
+        DetectionTime = logData[playerName] and logData[playerName].DetectionTime or timestamp,
+        ServerLink = joinLink or "N/A"
+    }
+    
+    pcall(function()
+        writefile("vicious_bee_stinger_log.txt", HttpService:JSONEncode(logData, true))
+    end)
+end
+
+local function formatLogToReadable()
+    if not readfile or not isfile or not isfile("vicious_bee_stinger_log.txt") then
+        return "No log file found"
+    end
+    
+    local success, logData = pcall(function()
+        local content = readfile("vicious_bee_stinger_log.txt")
+        if content and content ~= "" then
+            return HttpService:JSONDecode(content)
+        end
+    end)
+    
+    if not success or not logData then
+        return "Failed to read log file"
+    end
+    
+    local output = "=== VICIOUS BEE STINGER LOG ===\n\n"
+    local currentTime = os.time()
+    
+    for playerName, data in pairs(logData) do
+        output = output .. "Player: " .. playerName .. "\n"
+        output = output .. "Field: " .. data.Field .. "\n"
+        
+        -- Check if 4 minutes have passed since detection
+        local timeSinceDetection = currentTime - (data.DetectionTime or 0)
+        local status = (timeSinceDetection < config.stingerActiveTime) and "ACTIVE" or "NOT ACTIVE"
+        
+        output = output .. "Status: " .. status .. "\n"
+        
+        if status == "ACTIVE" then
+            local remainingTime = config.stingerActiveTime - timeSinceDetection
+            output = output .. "Time Remaining: " .. math.floor(remainingTime / 60) .. "m " .. (remainingTime % 60) .. "s\n"
+        end
+        
+        output = output .. "Server Link: " .. (data.ServerLink or "N/A") .. "\n"
+        output = output .. "\n"
+    end
+    
+    return output
+end
+
+-- Auto-update status every 30 seconds
+spawn(function()
+    while true do
+        wait(30)
+        if readfile and isfile and writefile and isfile("vicious_bee_stinger_log.txt") then
+            local success, logData = pcall(function()
+                local content = readfile("vicious_bee_stinger_log.txt")
+                if content and content ~= "" then
+                    return HttpService:JSONDecode(content)
+                end
+            end)
+            
+            if success and logData then
+                local currentTime = os.time()
+                local updated = false
+                
+                for playerName, data in pairs(logData) do
+                    local timeSinceDetection = currentTime - (data.DetectionTime or 0)
+                    local newStatus = (timeSinceDetection < config.stingerActiveTime) and "ACTIVE" or "NOT ACTIVE"
+                    
+                    if data.Status ~= newStatus then
+                        data.Status = newStatus
+                        data.LastUpdate = currentTime
+                        updated = true
+                    end
+                end
+                
+                if updated then
+                    pcall(function()
+                        writefile("vicious_bee_stinger_log.txt", HttpService:JSONEncode(logData, true))
+                        print("🔄 Stinger log statuses updated")
+                    end)
+                end
+            end
+        end
+    end
+end)
+
 -- SMART DETECTION: Only alert ONCE per spawn event with size verification
 local function onNewObject(obj)
     if not config.isRunning then return end
@@ -176,6 +340,23 @@ local function onNewObject(obj)
     config.detectionCount = config.detectionCount + 1
     config.lastDetectionTime = currentTime
 
+    -- Generate join link
+    local joinLink = generateJoinLink()
+    local serverTypeText = config.serverType == "Private" and "🔒 Private Server" or "🌐 Public Server"
+
+    -- Update log file with ACTIVE status and server link
+    updateStingerLog(player.Name, field, "ACTIVE", joinLink)
+    
+    -- Set timer to change status to NOT ACTIVE after 4 minutes
+    if config._activeStatusTimer then
+        task.cancel(config._activeStatusTimer)
+    end
+    
+    config._activeStatusTimer = task.delay(config.stingerActiveTime, function()
+        updateStingerLog(player.Name, field, "NOT ACTIVE", joinLink)
+        print("⏰ Stinger status changed to NOT ACTIVE (4 minutes passed)")
+    end)
+
     -- Calculate player distance
     local playerDistance = "Unknown"
     local char = player.Character
@@ -185,24 +366,11 @@ local function onNewObject(obj)
             playerDistance = math.floor((hrp.Position - obj.Position).Magnitude) .. " studs"
         end
     end
-
-    -- Generate join link based on server type
-    local joinLink
-    local serverTypeText
-    if config.serverType == "Private" and config.privateServerLink ~= "" then
-        joinLink = config.privateServerLink
-        serverTypeText = "🔒 Private Server"
-    else
-        local placeId = game.PlaceId
-        local jobId = game.JobId
-        joinLink = string.format("Roblox.GameLauncher.joinGameInstance(%d, '%s')", placeId, jobId)
-        serverTypeText = "🌐 Public Server"
-    end
     
-    -- Send webhook alert with @everyone ping
+    -- Send webhook alert with @everyone ping and CLICKABLE link
     sendWebhook(
         "🎯 VICIOUS BEE STINGER DETECTED!",
-        "🚨 A stinger was found!\n\n**Click the link below to join this server instantly!**",
+        "🚨 A stinger was found!\n\n**🔗 [CLICK HERE TO JOIN THIS SERVER](" .. joinLink .. ")**",
         0xFF0000,
         {
             { name = "📦 Object Name", value = obj.Name, inline = true },
@@ -214,7 +382,6 @@ local function onNewObject(obj)
             { name = "📐 Size", value = string.format("%.1f×%.1f×%.1f", obj.Size.X, obj.Size.Y, obj.Size.Z), inline = true },
             { name = "✅ Size Verified", value = "Matches stinger (3×2×1.5)", inline = true },
             { name = "🧭 Position", value = string.format("(%.1f, %.1f, %.1f)", obj.Position.X, obj.Position.Y, obj.Position.Z), inline = false },
-            { name = "🔗 Join Server", value = joinLink, inline = false },
             { name = "🔢 Detection #", value = tostring(config.detectionCount), inline = true }
         }
     )
@@ -225,6 +392,7 @@ local function onNewObject(obj)
     print("📐 Size:", string.format("%.1f×%.1f×%.1f", obj.Size.X, obj.Size.Y, obj.Size.Z))
     print("✅ Size verified: Matches stinger dimensions")
     print("🖥️ Server Type:", serverTypeText)
+    print("🔗 Join Link:", joinLink)
     print("🔢 Detection count:", config.detectionCount)
 
     -- Clean up if removed
@@ -248,6 +416,8 @@ local function createGUI()
     local MainFrame = Instance.new("Frame")
     local Title = Instance.new("TextLabel")
     local WebhookBox = Instance.new("TextBox")
+    local PCServerBox = Instance.new("TextBox")
+    local PCServerLabel = Instance.new("TextLabel")
     local ServerTypeLabel = Instance.new("TextLabel")
     local PublicButton = Instance.new("TextButton")
     local PrivateButton = Instance.new("TextButton")
@@ -260,6 +430,7 @@ local function createGUI()
     local PositionLabel = Instance.new("TextLabel")
     local DetectionCountLabel = Instance.new("TextLabel")
     local AntiIdleLabel = Instance.new("TextLabel")
+    local ViewLogButton = Instance.new("TextButton")
     
     ScreenGui.Name = "ViciousBeeHunterGUI"
     ScreenGui.Parent = CoreGui
@@ -269,8 +440,8 @@ local function createGUI()
     MainFrame.Parent = ScreenGui
     MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     MainFrame.BorderSizePixel = 0
-    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -250)
-    MainFrame.Size = UDim2.new(0, 400, 0, 500)
+    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -300)
+    MainFrame.Size = UDim2.new(0, 400, 0, 600)
     MainFrame.Active = true
     MainFrame.Draggable = true
     
@@ -280,7 +451,7 @@ local function createGUI()
     Title.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
     Title.Size = UDim2.new(1, 0, 0, 50)
     Title.Font = Enum.Font.GothamBold
-    Title.Text = "🐝 Vicious Bee Detector v3.4"
+    Title.Text = "🐝 Vicious Bee Detector v3.5"
     Title.TextColor3 = Color3.fromRGB(20, 20, 20)
     Title.TextSize = 17
     
@@ -310,9 +481,32 @@ local function createGUI()
     
     Instance.new("UICorner", WebhookBox).CornerRadius = UDim.new(0, 8)
     
+    PCServerLabel.Parent = MainFrame
+    PCServerLabel.BackgroundTransparency = 1
+    PCServerLabel.Position = UDim2.new(0, 20, 0, 120)
+    PCServerLabel.Size = UDim2.new(1, -40, 0, 20)
+    PCServerLabel.Font = Enum.Font.GothamBold
+    PCServerLabel.Text = "PC Server URL (for log file):"
+    PCServerLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+    PCServerLabel.TextSize = 12
+    PCServerLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    PCServerBox.Parent = MainFrame
+    PCServerBox.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+    PCServerBox.Position = UDim2.new(0, 20, 0, 145)
+    PCServerBox.Size = UDim2.new(1, -40, 0, 40)
+    PCServerBox.Font = Enum.Font.Gotham
+    PCServerBox.PlaceholderText = "http://YOUR_PC_IP:8080/log"
+    PCServerBox.Text = config.pcServerUrl
+    PCServerBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    PCServerBox.TextSize = 13
+    PCServerBox.ClearTextOnFocus = false
+    
+    Instance.new("UICorner", PCServerBox).CornerRadius = UDim.new(0, 8)
+    
     ServerTypeLabel.Parent = MainFrame
     ServerTypeLabel.BackgroundTransparency = 1
-    ServerTypeLabel.Position = UDim2.new(0, 20, 0, 125)
+    ServerTypeLabel.Position = UDim2.new(0, 20, 0, 200)
     ServerTypeLabel.Size = UDim2.new(1, -40, 0, 20)
     ServerTypeLabel.Font = Enum.Font.GothamBold
     ServerTypeLabel.Text = "Server Type:"
@@ -322,7 +516,7 @@ local function createGUI()
     
     PublicButton.Parent = MainFrame
     PublicButton.BackgroundColor3 = config.serverType == "Public" and Color3.fromRGB(50, 150, 255) or Color3.fromRGB(60, 60, 65)
-    PublicButton.Position = UDim2.new(0, 20, 0, 150)
+    PublicButton.Position = UDim2.new(0, 20, 0, 225)
     PublicButton.Size = UDim2.new(0.48, -15, 0, 35)
     PublicButton.Font = Enum.Font.GothamBold
     PublicButton.Text = "🌐 Public Server"
@@ -333,7 +527,7 @@ local function createGUI()
     
     PrivateButton.Parent = MainFrame
     PrivateButton.BackgroundColor3 = config.serverType == "Private" and Color3.fromRGB(50, 150, 255) or Color3.fromRGB(60, 60, 65)
-    PrivateButton.Position = UDim2.new(0.52, 5, 0, 150)
+    PrivateButton.Position = UDim2.new(0.52, 5, 0, 225)
     PrivateButton.Size = UDim2.new(0.48, -15, 0, 35)
     PrivateButton.Font = Enum.Font.GothamBold
     PrivateButton.Text = "🔒 Private Server"
@@ -344,7 +538,7 @@ local function createGUI()
     
     PrivateServerBox.Parent = MainFrame
     PrivateServerBox.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-    PrivateServerBox.Position = UDim2.new(0, 20, 0, 195)
+    PrivateServerBox.Position = UDim2.new(0, 20, 0, 270)
     PrivateServerBox.Size = UDim2.new(1, -40, 0, 40)
     PrivateServerBox.Font = Enum.Font.Gotham
     PrivateServerBox.PlaceholderText = "Paste Private Server Link Here..."
@@ -358,7 +552,7 @@ local function createGUI()
     
     StartButton.Parent = MainFrame
     StartButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    StartButton.Position = UDim2.new(0, 20, 0, 245)
+    StartButton.Position = UDim2.new(0, 20, 0, 320)
     StartButton.Size = UDim2.new(1, -40, 0, 45)
     StartButton.Font = Enum.Font.GothamBold
     StartButton.Text = "START DETECTING"
@@ -370,7 +564,7 @@ local function createGUI()
     StatusLabel.Parent = MainFrame
     StatusLabel.Name = "StatusLabel"
     StatusLabel.BackgroundTransparency = 1
-    StatusLabel.Position = UDim2.new(0, 20, 0, 305)
+    StatusLabel.Position = UDim2.new(0, 20, 0, 380)
     StatusLabel.Size = UDim2.new(1, -40, 0, 25)
     StatusLabel.Font = Enum.Font.GothamBold
     StatusLabel.Text = "Status: Idle"
@@ -381,7 +575,7 @@ local function createGUI()
     FieldLabel.Parent = MainFrame
     FieldLabel.Name = "FieldLabel"
     FieldLabel.BackgroundTransparency = 1
-    FieldLabel.Position = UDim2.new(0, 20, 0, 330)
+    FieldLabel.Position = UDim2.new(0, 20, 0, 405)
     FieldLabel.Size = UDim2.new(1, -40, 0, 25)
     FieldLabel.Font = Enum.Font.Gotham
     FieldLabel.Text = "Field: Waiting..."
@@ -392,7 +586,7 @@ local function createGUI()
     DetectionCountLabel.Parent = MainFrame
     DetectionCountLabel.Name = "DetectionCountLabel"
     DetectionCountLabel.BackgroundTransparency = 1
-    DetectionCountLabel.Position = UDim2.new(0, 20, 0, 355)
+    DetectionCountLabel.Position = UDim2.new(0, 20, 0, 430)
     DetectionCountLabel.Size = UDim2.new(1, -40, 0, 25)
     DetectionCountLabel.Font = Enum.Font.Gotham
     DetectionCountLabel.Text = "Detections: 0"
@@ -403,7 +597,7 @@ local function createGUI()
     AntiIdleLabel.Parent = MainFrame
     AntiIdleLabel.Name = "AntiIdleLabel"
     AntiIdleLabel.BackgroundTransparency = 1
-    AntiIdleLabel.Position = UDim2.new(0, 20, 0, 380)
+    AntiIdleLabel.Position = UDim2.new(0, 20, 0, 455)
     AntiIdleLabel.Size = UDim2.new(1, -40, 0, 25)
     AntiIdleLabel.Font = Enum.Font.Gotham
     AntiIdleLabel.Text = "🔄 Anti-Idle: Active"
@@ -413,7 +607,7 @@ local function createGUI()
     
     InfoLabel.Parent = MainFrame
     InfoLabel.BackgroundTransparency = 1
-    InfoLabel.Position = UDim2.new(0, 20, 0, 410)
+    InfoLabel.Position = UDim2.new(0, 20, 0, 485)
     InfoLabel.Size = UDim2.new(1, -40, 0, 45)
     InfoLabel.Font = Enum.Font.Gotham
     InfoLabel.Text = "💡 Detects 'Thorn' parts (Size: 3×2×1.5) once per spawn"
@@ -425,7 +619,7 @@ local function createGUI()
     PositionLabel.Name = "PositionLabel"
     PositionLabel.Parent = MainFrame
     PositionLabel.BackgroundTransparency = 1
-    PositionLabel.Position = UDim2.new(0, 20, 0, 465)
+    PositionLabel.Position = UDim2.new(0, 20, 0, 540)
     PositionLabel.Size = UDim2.new(1, -40, 0, 25)
     PositionLabel.Font = Enum.Font.Gotham
     PositionLabel.Text = "Position: Waiting..."
@@ -433,7 +627,18 @@ local function createGUI()
     PositionLabel.TextSize = 13
     PositionLabel.TextXAlignment = Enum.TextXAlignment.Left
     
-    -- Button handlers for server type selection
+    ViewLogButton.Parent = MainFrame
+    ViewLogButton.BackgroundColor3 = Color3.fromRGB(255, 150, 50)
+    ViewLogButton.Position = UDim2.new(0, 20, 0, 570)
+    ViewLogButton.Size = UDim2.new(1, -40, 0, 35)
+    ViewLogButton.Font = Enum.Font.GothamBold
+    ViewLogButton.Text = "📋 VIEW STINGER LOG"
+    ViewLogButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ViewLogButton.TextSize = 14
+    
+    Instance.new("UICorner", ViewLogButton).CornerRadius = UDim.new(0, 8)
+    
+    -- Button handlers
     PublicButton.MouseButton1Click:Connect(function()
         config.serverType = "Public"
         PublicButton.BackgroundColor3 = Color3.fromRGB(50, 150, 255)
@@ -478,6 +683,14 @@ local function createGUI()
     WebhookBox.FocusLost:Connect(function()
         if writefile then
             writefile("vicious_bee_webhook.txt", WebhookBox.Text)
+        end
+    end)
+    
+    PCServerBox.FocusLost:Connect(function()
+        config.pcServerUrl = PCServerBox.Text
+        if writefile then
+            writefile("vicious_bee_pcserver.txt", PCServerBox.Text)
+            print("✅ PC server URL saved:", config.pcServerUrl)
         end
     end)
     
@@ -553,7 +766,27 @@ local function createGUI()
         if config._descendantConnection then
             config._descendantConnection:Disconnect()
         end
+        if config._activeStatusTimer then
+            task.cancel(config._activeStatusTimer)
+        end
         ScreenGui:Destroy()
+    end)
+    
+    ViewLogButton.MouseButton1Click:Connect(function()
+        local logContent = formatLogToReadable()
+        print("\n" .. logContent)
+        
+        StatusLabel.Text = "Status: 📋 Log printed to console!"
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+        
+        task.wait(2)
+        if config.isRunning then
+            StatusLabel.Text = "Status: 👀 Watching for stingers (3×2×1.5)..."
+            StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+        else
+            StatusLabel.Text = "Status: Idle"
+            StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+        end
     end)
     
     -- Update GUI labels in real-time
@@ -586,10 +819,11 @@ local function createGUI()
     end)
 end
 
-print("🐝 Vicious Bee Stinger Detector v3.4 Loaded!")
+print("🐝 Vicious Bee Stinger Detector v3.5 Loaded!")
 print("📱 Opening GUI...")
 print("🎯 This script detects 'Thorn' parts (Size: 3×2×1.5) spawning near fields!")
 print("🔄 Anti-idle system enabled!")
 print("🖥️ Server Type:", config.serverType)
 print("✅ Size verification active: Only detects stingers with exact size 3.0×2.0×1.5")
+print("🔗 Join links are now clickable in Discord!")
 createGUI()
