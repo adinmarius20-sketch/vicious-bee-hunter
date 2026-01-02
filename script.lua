@@ -89,21 +89,18 @@ local function getClosestField(position)
 end
 
 -- MAIN DETECTION: Check if object could be a stinger (STRICT)
--- MAIN DETECTION: Check if object could be a stinger
--- Detect ANY object spawning near fields
 local function onNewObject(obj)
     if not config.isRunning then return end
 
     task.wait(0.05) -- let object fully load
 
     if not obj or not obj.Parent then return end
-    if not obj:IsA("BasePart") then return end
 
     -- Avoid duplicate detections
     if config._detectedStingers[obj] then return end
 
     -- Check if object is close to any field
-    local field, distance = getClosestField(obj.Position)
+    local field, distance = getClosestField(obj.Position or (obj.PrimaryPart and obj.PrimaryPart.Position) or Vector3.new(0,0,0))
     if field == "Unknown" or distance > 150 then
         return -- ignore objects far from fields
     end
@@ -113,17 +110,21 @@ local function onNewObject(obj)
     config.stingerDetected = true
     config.currentField = field
 
-    -- Calculate player distance
+    -- Calculate player distance (optional)
     local playerDistance = "Unknown"
     local char = player.Character
-    if char then
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            playerDistance = math.floor((hrp.Position - obj.Position).Magnitude) .. " studs"
-        end
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        local objPos = obj.Position or (obj.PrimaryPart and obj.PrimaryPart.Position) or Vector3.new(0,0,0)
+        playerDistance = math.floor((char.HumanoidRootPart.Position - objPos).Magnitude) .. " studs"
     end
 
     -- Send webhook alert
+    local objPos = obj.Position or (obj.PrimaryPart and obj.PrimaryPart.Position) or Vector3.new(0,0,0)
+    local sizeStr = "N/A"
+    if obj:IsA("BasePart") then
+        sizeStr = string.format("%.1f, %.1f, %.1f", obj.Size.X, obj.Size.Y, obj.Size.Z)
+    end
+
     sendWebhook(
         "🟡 Object Detected in Field!",
         "A new object has spawned near a field.",
@@ -134,27 +135,24 @@ local function onNewObject(obj)
             { name = "📍 Field", value = config.currentField, inline = true },
             { name = "📏 Field Distance", value = math.floor(distance) .. " studs", inline = true },
             { name = "👤 Player Distance", value = playerDistance, inline = true },
-            { name = "📐 Size", value = string.format("%.1f, %.1f, %.1f", obj.Size.X, obj.Size.Y, obj.Size.Z), inline = false },
-            { name = "🧭 Position", value = string.format("(%.1f, %.1f, %.1f)", obj.Position.X, obj.Position.Y, obj.Position.Z), inline = false },
+            { name = "📐 Size", value = sizeStr, inline = false },
+            { name = "🧭 Position", value = string.format("(%.1f, %.1f, %.1f)", objPos.X, objPos.Y, objPos.Z), inline = false },
             { name = "🌐 Server ID", value = game.JobId, inline = false }
         }
     )
 
-    print("🟡 Object Detected Near Field!")
-    print("📦 Object:", obj.Name)
-    print("📍 Field:", config.currentField)
-    print("📏 Field Distance:", distance, "studs")
+    print("🟡 Object Detected Near Field!", obj.Name, "Field:", config.currentField)
 
     -- Clean up if removed
     obj.AncestryChanged:Connect(function()
         if not obj.Parent then
-            print("⚠️ Object removed from workspace")
             config._detectedStingers[obj] = nil
             config.stingerDetected = false
             config.currentField = "None"
         end
     end)
 end
+
 
 local function createGUI()
     if CoreGui:FindFirstChild("ViciousBeeHunterGUI") then
