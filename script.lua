@@ -155,10 +155,15 @@ local function onNewObject(obj)
         end
     end
 
+    -- Generate join link
+    local placeId = game.PlaceId
+    local jobId = game.JobId
+    local joinLink = string.format("https://www.roblox.com/games/start?placeId=%s&launchData=%%7B%%22gameInstanceId%%22%%3A%%22%s%%22%%7D", placeId, jobId)
+    
     -- Send webhook alert with @everyone ping
     sendWebhook(
         "🎯 VICIOUS BEE STINGER DETECTED!",
-        "🚨 A Thorn part (stinger) has spawned! Go collect it NOW!",
+        "🚨 A Thorn part (stinger) has spawned! Go collect it NOW!\n\n**Click the link below to join this server instantly!**",
         0xFF0000,
         {
             { name = "📦 Object Name", value = obj.Name, inline = true },
@@ -168,6 +173,7 @@ local function onNewObject(obj)
             { name = "👤 Player Distance", value = playerDistance, inline = true },
             { name = "📐 Size", value = string.format("%.1f, %.1f, %.1f", obj.Size.X, obj.Size.Y, obj.Size.Z), inline = false },
             { name = "🧭 Position", value = string.format("(%.1f, %.1f, %.1f)", obj.Position.X, obj.Position.Y, obj.Position.Z), inline = false },
+            { name = "🔗 Join Server", value = "[**CLICK HERE TO JOIN THIS SERVER**](" .. joinLink .. ")", inline = false },
             { name = "🌐 Server ID", value = game.JobId, inline = false },
             { name = "🔢 Detection #", value = tostring(config.detectionCount), inline = true }
         }
