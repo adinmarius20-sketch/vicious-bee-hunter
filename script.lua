@@ -89,52 +89,44 @@ local function getClosestField(position)
 end
 
 -- MAIN DETECTION: Check if object could be a stinger (STRICT)
+-- Enhanced Stinger Detection
 local function couldBeStinger(obj)
-    if not obj or not obj:IsA("BasePart") then
-        return false
-    end
+    if not obj or not obj:IsA("BasePart") then return false end
 
-    -- Real stinger is ALWAYS anchored
-    if not obj.Anchored then
-        return false
-    end
-
-    -- Must spawn near a flower field (most important rule)
-    local field, fieldDist = getClosestField(obj.Position)
-    if field == "Unknown" or fieldDist > 200 then
-        return false
-    end
-
-    -- Ignore tiny junk (VERY loose)
-    if obj.Size.Magnitude < 1.5 then
-        return false
-    end
-
-    -- SIGNALS (only ONE needed)
-    local signals = 0
-
-    -- Walk-through trigger (VERY important)
-    if obj.CanCollide == false then
-        signals += 1
-    end
-
-    -- Touch trigger (used to spawn the bee)
-    if obj:FindFirstChildOfClass("TouchTransmitter") then
-        signals += 1
-    end
-
-    -- Often a MeshPart
-    if obj:IsA("MeshPart") then
-        signals += 1
-    end
-
-    if signals >= 1 then
-        print("🐝 LIKELY VICIOUS BEE STINGER")
+    -- 1️⃣ First, check for the real trigger part by name
+    if obj.Name == "CorePart" then
+        print("✅ DETECTED REAL STINGER (CorePart)")
         return true
+    end
+
+    -- 2️⃣ Optional: detect decorative/moving spikes
+    local spikeNames = { "Stem", "C" } -- Add more if you notice others
+    for _, name in ipairs(spikeNames) do
+        if obj.Name == name then
+            print("⚠️ Detected decorative spike:", obj.Name)
+            return true
+        end
+    end
+
+    -- 3️⃣ Mesh-based fallback (in case future stingers use MeshParts)
+    if obj:IsA("MeshPart") or obj:FindFirstChildOfClass("SpecialMesh") then
+        print("⚠️ POSSIBLE STINGER (mesh-based):", obj.Name)
+        return true
+    end
+
+    -- 4️⃣ Optional lenient check for any BasePart near a field
+    local field, distance = getClosestField(obj.Position)
+    if field ~= "Unknown" and distance < 120 then
+        -- Small, anchored parts could be triggers
+        if obj.Anchored and obj.Size.Magnitude < 15 then
+            print("⚠️ POSSIBLE STINGER (generic part near field):", obj.Name)
+            return true
+        end
     end
 
     return false
 end
+
 
 
 -- IMPROVED: Detect new objects spawning ANYWHERE in the game
