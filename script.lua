@@ -1,4 +1,5 @@
--- Vicious Bee Stinger Hunter Script v3.2 - ANTI-IDLE + SMART DETECTION
+
+-- Vicious Bee Stinger Hunter Script v3.3 - ANTI-IDLE + SMART DETECTION + SERVER TYPE SELECTOR
 -- Detects "Thorn" parts that spawn near fields (ONCE per spawn event)
 
 local HttpService = game:GetService("HttpService")
@@ -20,7 +21,9 @@ local config = {
     _detectedStingers = {},
     detectionCount = 0,
     lastDetectionTime = 0,
-    detectionCooldown = 5 -- seconds to wait before detecting again (prevents multiple alerts)
+    detectionCooldown = 5, -- seconds to wait before detecting again (prevents multiple alerts)
+    serverType = "Public", -- "Public" or "Private"
+    privateServerLink = ""
 }
 
 -- Load saved webhook
@@ -29,6 +32,21 @@ if isfile and readfile and isfile("vicious_bee_webhook.txt") then
     if saved and saved ~= "" then
         config.webhookUrl = saved
         print("✅ Loaded saved webhook")
+    end
+end
+
+-- Load saved server type and private link
+if isfile and readfile and isfile("vicious_bee_serverconfig.txt") then
+    local success, result = pcall(function()
+        local saved = readfile("vicious_bee_serverconfig.txt")
+        if saved and saved ~= "" then
+            return HttpService:JSONDecode(saved)
+        end
+    end)
+    if success and result then
+        config.serverType = result.serverType or "Public"
+        config.privateServerLink = result.privateServerLink or ""
+        print("✅ Loaded saved server config:", config.serverType)
     end
 end
 
@@ -155,10 +173,18 @@ local function onNewObject(obj)
         end
     end
 
-    -- Generate join link
-    local placeId = game.PlaceId
-    local jobId = game.JobId
-    local joinLink = string.format("https://www.roblox.com/games/start?placeId=%s&launchData=%%7B%%22gameInstanceId%%22%%3A%%22%s%%22%%7D", placeId, jobId)
+    -- Generate join link based on server type
+    local joinLink
+    local serverTypeText
+    if config.serverType == "Private" and config.privateServerLink ~= "" then
+        joinLink = config.privateServerLink
+        serverTypeText = "🔒 Private Server"
+    else
+        local placeId = game.PlaceId
+        local jobId = game.JobId
+        joinLink = string.format("https://www.roblox.com/games/start?placeId=%s&launchData=%%7B%%22gameInstanceId%%22%%3A%%22%s%%22%%7D", placeId, jobId)
+        serverTypeText = "🌐 Public Server"
+    end
     
     -- Send webhook alert with @everyone ping
     sendWebhook(
@@ -171,6 +197,7 @@ local function onNewObject(obj)
             { name = "📍 Field", value = config.currentField, inline = true },
             { name = "📏 Field Distance", value = math.floor(distance) .. " studs", inline = true },
             { name = "👤 Player Distance", value = playerDistance, inline = true },
+            { name = "🖥️ Server Type", value = serverTypeText, inline = true },
             { name = "📐 Size", value = string.format("%.1f, %.1f, %.1f", obj.Size.X, obj.Size.Y, obj.Size.Z), inline = false },
             { name = "🧭 Position", value = string.format("(%.1f, %.1f, %.1f)", obj.Position.X, obj.Position.Y, obj.Position.Z), inline = false },
             { name = "🔗 Join Server", value = "[**CLICK HERE TO JOIN THIS SERVER**](" .. joinLink .. ")", inline = false },
@@ -182,6 +209,7 @@ local function onNewObject(obj)
     print("🎯 VICIOUS BEE STINGER DETECTED!")
     print("📍 Field:", config.currentField)
     print("📏 Distance from field:", math.floor(distance), "studs")
+    print("🖥️ Server Type:", serverTypeText)
     print("🔢 Detection count:", config.detectionCount)
 
     -- Clean up if removed
@@ -207,6 +235,10 @@ local function createGUI()
     local MainFrame = Instance.new("Frame")
     local Title = Instance.new("TextLabel")
     local WebhookBox = Instance.new("TextBox")
+    local ServerTypeLabel = Instance.new("TextLabel")
+    local PublicButton = Instance.new("TextButton")
+    local PrivateButton = Instance.new("TextButton")
+    local PrivateServerBox = Instance.new("TextBox")
     local StartButton = Instance.new("TextButton")
     local StatusLabel = Instance.new("TextLabel")
     local FieldLabel = Instance.new("TextLabel")
@@ -224,8 +256,8 @@ local function createGUI()
     MainFrame.Parent = ScreenGui
     MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     MainFrame.BorderSizePixel = 0
-    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -190)
-    MainFrame.Size = UDim2.new(0, 400, 0, 380)
+    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -250)
+    MainFrame.Size = UDim2.new(0, 400, 0, 500)
     MainFrame.Active = true
     MainFrame.Draggable = true
     
@@ -235,7 +267,7 @@ local function createGUI()
     Title.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
     Title.Size = UDim2.new(1, 0, 0, 50)
     Title.Font = Enum.Font.GothamBold
-    Title.Text = "🐝 Vicious Bee Detector v3.2"
+    Title.Text = "🐝 Vicious Bee Detector v3.3"
     Title.TextColor3 = Color3.fromRGB(20, 20, 20)
     Title.TextSize = 17
     
@@ -265,9 +297,55 @@ local function createGUI()
     
     Instance.new("UICorner", WebhookBox).CornerRadius = UDim.new(0, 8)
     
+    ServerTypeLabel.Parent = MainFrame
+    ServerTypeLabel.BackgroundTransparency = 1
+    ServerTypeLabel.Position = UDim2.new(0, 20, 0, 125)
+    ServerTypeLabel.Size = UDim2.new(1, -40, 0, 20)
+    ServerTypeLabel.Font = Enum.Font.GothamBold
+    ServerTypeLabel.Text = "Server Type:"
+    ServerTypeLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+    ServerTypeLabel.TextSize = 13
+    ServerTypeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    PublicButton.Parent = MainFrame
+    PublicButton.BackgroundColor3 = config.serverType == "Public" and Color3.fromRGB(50, 150, 255) or Color3.fromRGB(60, 60, 65)
+    PublicButton.Position = UDim2.new(0, 20, 0, 150)
+    PublicButton.Size = UDim2.new(0.48, -15, 0, 35)
+    PublicButton.Font = Enum.Font.GothamBold
+    PublicButton.Text = "🌐 Public Server"
+    PublicButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    PublicButton.TextSize = 14
+    
+    Instance.new("UICorner", PublicButton).CornerRadius = UDim.new(0, 8)
+    
+    PrivateButton.Parent = MainFrame
+    PrivateButton.BackgroundColor3 = config.serverType == "Private" and Color3.fromRGB(50, 150, 255) or Color3.fromRGB(60, 60, 65)
+    PrivateButton.Position = UDim2.new(0.52, 5, 0, 150)
+    PrivateButton.Size = UDim2.new(0.48, -15, 0, 35)
+    PrivateButton.Font = Enum.Font.GothamBold
+    PrivateButton.Text = "🔒 Private Server"
+    PrivateButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    PrivateButton.TextSize = 14
+    
+    Instance.new("UICorner", PrivateButton).CornerRadius = UDim.new(0, 8)
+    
+    PrivateServerBox.Parent = MainFrame
+    PrivateServerBox.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+    PrivateServerBox.Position = UDim2.new(0, 20, 0, 195)
+    PrivateServerBox.Size = UDim2.new(1, -40, 0, 40)
+    PrivateServerBox.Font = Enum.Font.Gotham
+    PrivateServerBox.PlaceholderText = "Paste Private Server Link Here..."
+    PrivateServerBox.Text = config.privateServerLink
+    PrivateServerBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    PrivateServerBox.TextSize = 13
+    PrivateServerBox.ClearTextOnFocus = false
+    PrivateServerBox.Visible = config.serverType == "Private"
+    
+    Instance.new("UICorner", PrivateServerBox).CornerRadius = UDim.new(0, 8)
+    
     StartButton.Parent = MainFrame
     StartButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    StartButton.Position = UDim2.new(0, 20, 0, 125)
+    StartButton.Position = UDim2.new(0, 20, 0, 245)
     StartButton.Size = UDim2.new(1, -40, 0, 45)
     StartButton.Font = Enum.Font.GothamBold
     StartButton.Text = "START DETECTING"
@@ -279,7 +357,7 @@ local function createGUI()
     StatusLabel.Parent = MainFrame
     StatusLabel.Name = "StatusLabel"
     StatusLabel.BackgroundTransparency = 1
-    StatusLabel.Position = UDim2.new(0, 20, 0, 185)
+    StatusLabel.Position = UDim2.new(0, 20, 0, 305)
     StatusLabel.Size = UDim2.new(1, -40, 0, 25)
     StatusLabel.Font = Enum.Font.GothamBold
     StatusLabel.Text = "Status: Idle"
@@ -290,7 +368,7 @@ local function createGUI()
     FieldLabel.Parent = MainFrame
     FieldLabel.Name = "FieldLabel"
     FieldLabel.BackgroundTransparency = 1
-    FieldLabel.Position = UDim2.new(0, 20, 0, 210)
+    FieldLabel.Position = UDim2.new(0, 20, 0, 330)
     FieldLabel.Size = UDim2.new(1, -40, 0, 25)
     FieldLabel.Font = Enum.Font.Gotham
     FieldLabel.Text = "Field: Waiting..."
@@ -301,7 +379,7 @@ local function createGUI()
     DetectionCountLabel.Parent = MainFrame
     DetectionCountLabel.Name = "DetectionCountLabel"
     DetectionCountLabel.BackgroundTransparency = 1
-    DetectionCountLabel.Position = UDim2.new(0, 20, 0, 235)
+    DetectionCountLabel.Position = UDim2.new(0, 20, 0, 355)
     DetectionCountLabel.Size = UDim2.new(1, -40, 0, 25)
     DetectionCountLabel.Font = Enum.Font.Gotham
     DetectionCountLabel.Text = "Detections: 0"
@@ -312,7 +390,7 @@ local function createGUI()
     AntiIdleLabel.Parent = MainFrame
     AntiIdleLabel.Name = "AntiIdleLabel"
     AntiIdleLabel.BackgroundTransparency = 1
-    AntiIdleLabel.Position = UDim2.new(0, 20, 0, 260)
+    AntiIdleLabel.Position = UDim2.new(0, 20, 0, 380)
     AntiIdleLabel.Size = UDim2.new(1, -40, 0, 25)
     AntiIdleLabel.Font = Enum.Font.Gotham
     AntiIdleLabel.Text = "🔄 Anti-Idle: Active"
@@ -322,7 +400,7 @@ local function createGUI()
     
     InfoLabel.Parent = MainFrame
     InfoLabel.BackgroundTransparency = 1
-    InfoLabel.Position = UDim2.new(0, 20, 0, 290)
+    InfoLabel.Position = UDim2.new(0, 20, 0, 410)
     InfoLabel.Size = UDim2.new(1, -40, 0, 45)
     InfoLabel.Font = Enum.Font.Gotham
     InfoLabel.Text = "💡 Detects 'Thorn' parts once per spawn (no duplicates)"
@@ -334,7 +412,7 @@ local function createGUI()
     PositionLabel.Name = "PositionLabel"
     PositionLabel.Parent = MainFrame
     PositionLabel.BackgroundTransparency = 1
-    PositionLabel.Position = UDim2.new(0, 20, 0, 345)
+    PositionLabel.Position = UDim2.new(0, 20, 0, 465)
     PositionLabel.Size = UDim2.new(1, -40, 0, 25)
     PositionLabel.Font = Enum.Font.Gotham
     PositionLabel.Text = "Position: Waiting..."
@@ -342,11 +420,70 @@ local function createGUI()
     PositionLabel.TextSize = 13
     PositionLabel.TextXAlignment = Enum.TextXAlignment.Left
     
+    -- Button handlers for server type selection
+    PublicButton.MouseButton1Click:Connect(function()
+        config.serverType = "Public"
+        PublicButton.BackgroundColor3 = Color3.fromRGB(50, 150, 255)
+        PrivateButton.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+        PrivateServerBox.Visible = false
+        
+        -- Save config
+        if writefile then
+            writefile("vicious_bee_serverconfig.txt", HttpService:JSONEncode({
+                serverType = config.serverType,
+                privateServerLink = config.privateServerLink
+            }))
+            print("✅ Server type set to Public")
+        end
+    end)
+    
+    PrivateButton.MouseButton1Click:Connect(function()
+        config.serverType = "Private"
+        PrivateButton.BackgroundColor3 = Color3.fromRGB(50, 150, 255)
+        PublicButton.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+        PrivateServerBox.Visible = true
+        
+        -- Save config
+        if writefile then
+            writefile("vicious_bee_serverconfig.txt", HttpService:JSONEncode({
+                serverType = config.serverType,
+                privateServerLink = config.privateServerLink
+            }))
+            print("✅ Server type set to Private")
+        end
+    end)
+    
+    -- Save private server link when changed
+    PrivateServerBox.FocusLost:Connect(function()
+        config.privateServerLink = PrivateServerBox.Text
+        if writefile then
+            writefile("vicious_bee_serverconfig.txt", HttpService:JSONEncode({
+                serverType = config.serverType,
+                privateServerLink = config.privateServerLink
+            }))
+            print("✅ Private server link saved")
+        end
+    end)
+    
+    -- Save webhook when changed
+    WebhookBox.FocusLost:Connect(function()
+        if writefile then
+            writefile("vicious_bee_webhook.txt", WebhookBox.Text)
+        end
+    end)
+    
     StartButton.MouseButton1Click:Connect(function()
         if not config.isRunning then
             local webhook = WebhookBox.Text
             if webhook == "" or not webhook:match("^https://discord%.com/api/webhooks/") then
                 StatusLabel.Text = "Status: ❌ Invalid Webhook URL"
+                StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+                return
+            end
+            
+            -- Validate private server link if using private mode
+            if config.serverType == "Private" and (config.privateServerLink == "" or not config.privateServerLink:match("^https://")) then
+                StatusLabel.Text = "Status: ❌ Invalid Private Server Link"
                 StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
                 return
             end
@@ -371,15 +508,21 @@ local function createGUI()
             StatusLabel.Text = "Status: 👀 Watching for 'Thorn' parts..."
             StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
             
+            local serverTypeText = config.serverType == "Private" and "🔒 Private Server" or "🌐 Public Server"
+            
             sendWebhook(
                 "🚀 Detection Started", 
                 "Now monitoring for Vicious Bee stinger spawns (Thorn parts) in this server! Anti-idle is active.", 
                 0x00AAFF, 
-                {{name = "🌐 Server ID", value = game.JobId, inline = false}}
+                {
+                    {name = "🖥️ Server Type", value = serverTypeText, inline = true},
+                    {name = "🌐 Server ID", value = game.JobId, inline = false}
+                }
             )
             
             print("🎯 DETECTION ACTIVE - Watching for 'Thorn' parts near fields...")
             print("🔄 Anti-idle system is active!")
+            print("🖥️ Server Type:", serverTypeText)
         else
             config.isRunning = false
             
@@ -438,8 +581,9 @@ local function createGUI()
     end)
 end
 
-print("🐝 Vicious Bee Stinger Detector v3.2 Loaded!")
+print("🐝 Vicious Bee Stinger Detector v3.3 Loaded!")
 print("📱 Opening GUI...")
 print("🎯 This script detects 'Thorn' parts spawning near fields!")
 print("🔄 Anti-idle system enabled!")
+print("🖥️ Server Type:", config.serverType)
 createGUI()
