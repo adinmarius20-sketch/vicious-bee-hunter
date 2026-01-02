@@ -1,6 +1,5 @@
-
--- Vicious Bee Stinger Hunter Script v3.3 - ANTI-IDLE + SMART DETECTION + SERVER TYPE SELECTOR
--- Detects "Thorn" parts that spawn near fields (ONCE per spawn event)
+-- Vicious Bee Stinger Hunter Script v3.4 - FIXED JOIN LINKS + SIZE VERIFICATION
+-- Detects "Thorn" parts (Size: 3×2×1.5) that spawn near fields (ONCE per spawn event)
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -21,9 +20,11 @@ local config = {
     _detectedStingers = {},
     detectionCount = 0,
     lastDetectionTime = 0,
-    detectionCooldown = 5, -- seconds to wait before detecting again (prevents multiple alerts)
-    serverType = "Public", -- "Public" or "Private"
-    privateServerLink = ""
+    detectionCooldown = 5,
+    serverType = "Public",
+    privateServerLink = "",
+    expectedSize = Vector3.new(3.0, 2.0, 1.5),
+    sizeTolerance = 0.1
 }
 
 -- Load saved webhook
@@ -60,7 +61,7 @@ end)
 -- Additional anti-idle: Trigger every 10 minutes automatically
 spawn(function()
     while true do
-        wait(600) -- 600 seconds = 10 minutes
+        wait(600)
         VirtualUser:CaptureController()
         VirtualUser:ClickButton2(Vector2.new())
         print("🔄 Anti-idle triggered (10 min auto)")
@@ -128,32 +129,44 @@ local function getClosestField(position)
     return closestField, closestDistance
 end
 
--- SMART DETECTION: Only alert ONCE per spawn event (prevents triple notifications)
+local function verifySizeMatch(objSize)
+    return math.abs(objSize.X - config.expectedSize.X) <= config.sizeTolerance and
+           math.abs(objSize.Y - config.expectedSize.Y) <= config.sizeTolerance and
+           math.abs(objSize.Z - config.expectedSize.Z) <= config.sizeTolerance
+end
+
+-- SMART DETECTION: Only alert ONCE per spawn event with size verification
 local function onNewObject(obj)
     if not config.isRunning then return end
 
-    task.wait(0.05) -- let object fully load
+    task.wait(0.05)
 
     if not obj or not obj.Parent then return end
     if not obj:IsA("BasePart") then return end
     
-    -- CRITICAL CHECK: Must be named "Thorn"
+    -- Must be named "Thorn"
     if obj.Name ~= "Thorn" then return end
+    
+    -- SIZE VERIFICATION: Must match stinger dimensions (3.0, 2.0, 1.5)
+    if not verifySizeMatch(obj.Size) then
+        print("⚠️ Ignored 'Thorn' with wrong size:", string.format("%.2f×%.2f×%.2f", obj.Size.X, obj.Size.Y, obj.Size.Z))
+        return
+    end
 
     -- Check if object is close to any field
     local field, distance = getClosestField(obj.Position)
     if field == "Unknown" or distance > 150 then
-        return -- ignore objects far from fields
+        return
     end
 
-    -- COOLDOWN CHECK: Prevent multiple detections in quick succession
+    -- COOLDOWN CHECK
     local currentTime = tick()
     if currentTime - config.lastDetectionTime < config.detectionCooldown then
         print("⏳ Detection cooldown active, ignoring duplicate Thorn...")
         return
     end
 
-    -- Avoid duplicate detections of the same object
+    -- Avoid duplicate detections
     if config._detectedStingers[obj] then return end
 
     -- Mark object as detected
@@ -182,7 +195,7 @@ local function onNewObject(obj)
     else
         local placeId = game.PlaceId
         local jobId = game.JobId
-        joinLink = string.format("https://www.roblox.com/games/start?placeId=%s&launchData=%%7B%%22gameInstanceId%%22%%3A%%22%s%%22%%7D", placeId, jobId)
+        joinLink = string.format("Roblox.GameLauncher.joinGameInstance(%d, '%s')", placeId, jobId)
         serverTypeText = "🌐 Public Server"
     end
     
@@ -198,10 +211,10 @@ local function onNewObject(obj)
             { name = "📏 Field Distance", value = math.floor(distance) .. " studs", inline = true },
             { name = "👤 Player Distance", value = playerDistance, inline = true },
             { name = "🖥️ Server Type", value = serverTypeText, inline = true },
-            { name = "📐 Size", value = string.format("%.1f, %.1f, %.1f", obj.Size.X, obj.Size.Y, obj.Size.Z), inline = false },
+            { name = "📐 Size", value = string.format("%.1f×%.1f×%.1f", obj.Size.X, obj.Size.Y, obj.Size.Z), inline = true },
+            { name = "✅ Size Verified", value = "Matches stinger (3×2×1.5)", inline = true },
             { name = "🧭 Position", value = string.format("(%.1f, %.1f, %.1f)", obj.Position.X, obj.Position.Y, obj.Position.Z), inline = false },
-            { name = "🔗 Join Server", value = "[**CLICK HERE TO JOIN THIS SERVER**](" .. joinLink .. ")", inline = false },
-            { name = "🌐 Server ID", value = game.JobId, inline = false },
+            { name = "🔗 Join Server", value = joinLink, inline = false },
             { name = "🔢 Detection #", value = tostring(config.detectionCount), inline = true }
         }
     )
@@ -209,6 +222,8 @@ local function onNewObject(obj)
     print("🎯 VICIOUS BEE STINGER DETECTED!")
     print("📍 Field:", config.currentField)
     print("📏 Distance from field:", math.floor(distance), "studs")
+    print("📐 Size:", string.format("%.1f×%.1f×%.1f", obj.Size.X, obj.Size.Y, obj.Size.Z))
+    print("✅ Size verified: Matches stinger dimensions")
     print("🖥️ Server Type:", serverTypeText)
     print("🔢 Detection count:", config.detectionCount)
 
@@ -217,8 +232,6 @@ local function onNewObject(obj)
         if not obj.Parent then
             print("⚠️ Stinger removed from workspace")
             config._detectedStingers[obj] = nil
-            -- Don't reset stingerDetected or currentField immediately
-            -- Wait 3 seconds before clearing
             task.wait(3)
             config.stingerDetected = false
             config.currentField = "None"
@@ -267,7 +280,7 @@ local function createGUI()
     Title.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
     Title.Size = UDim2.new(1, 0, 0, 50)
     Title.Font = Enum.Font.GothamBold
-    Title.Text = "🐝 Vicious Bee Detector v3.3"
+    Title.Text = "🐝 Vicious Bee Detector v3.4"
     Title.TextColor3 = Color3.fromRGB(20, 20, 20)
     Title.TextSize = 17
     
@@ -403,7 +416,7 @@ local function createGUI()
     InfoLabel.Position = UDim2.new(0, 20, 0, 410)
     InfoLabel.Size = UDim2.new(1, -40, 0, 45)
     InfoLabel.Font = Enum.Font.Gotham
-    InfoLabel.Text = "💡 Detects 'Thorn' parts once per spawn (no duplicates)"
+    InfoLabel.Text = "💡 Detects 'Thorn' parts (Size: 3×2×1.5) once per spawn"
     InfoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
     InfoLabel.TextSize = 11
     InfoLabel.TextWrapped = true
@@ -427,7 +440,6 @@ local function createGUI()
         PrivateButton.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
         PrivateServerBox.Visible = false
         
-        -- Save config
         if writefile then
             writefile("vicious_bee_serverconfig.txt", HttpService:JSONEncode({
                 serverType = config.serverType,
@@ -443,7 +455,6 @@ local function createGUI()
         PublicButton.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
         PrivateServerBox.Visible = true
         
-        -- Save config
         if writefile then
             writefile("vicious_bee_serverconfig.txt", HttpService:JSONEncode({
                 serverType = config.serverType,
@@ -453,7 +464,6 @@ local function createGUI()
         end
     end)
     
-    -- Save private server link when changed
     PrivateServerBox.FocusLost:Connect(function()
         config.privateServerLink = PrivateServerBox.Text
         if writefile then
@@ -465,7 +475,6 @@ local function createGUI()
         end
     end)
     
-    -- Save webhook when changed
     WebhookBox.FocusLost:Connect(function()
         if writefile then
             writefile("vicious_bee_webhook.txt", WebhookBox.Text)
@@ -481,7 +490,6 @@ local function createGUI()
                 return
             end
             
-            -- Validate private server link if using private mode
             if config.serverType == "Private" and (config.privateServerLink == "" or not config.privateServerLink:match("^https://")) then
                 StatusLabel.Text = "Status: ❌ Invalid Private Server Link"
                 StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
@@ -497,30 +505,29 @@ local function createGUI()
             
             config.isRunning = true
             
-            -- Connect the listener for new objects EVERYWHERE in the game
             if not config._descendantConnection then
                 config._descendantConnection = game.DescendantAdded:Connect(onNewObject)
-                print("✅ Monitoring entire game for 'Thorn' parts...")
+                print("✅ Monitoring entire game for 'Thorn' parts with size 3×2×1.5...")
             end
             
             StartButton.Text = "STOP DETECTING"
             StartButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-            StatusLabel.Text = "Status: 👀 Watching for 'Thorn' parts..."
+            StatusLabel.Text = "Status: 👀 Watching for stingers (3×2×1.5)..."
             StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
             
             local serverTypeText = config.serverType == "Private" and "🔒 Private Server" or "🌐 Public Server"
             
             sendWebhook(
                 "🚀 Detection Started", 
-                "Now monitoring for Vicious Bee stinger spawns (Thorn parts) in this server! Anti-idle is active.", 
+                "Now monitoring for Vicious Bee stinger spawns (Thorn parts with verified size) in this server! Anti-idle is active.", 
                 0x00AAFF, 
                 {
                     {name = "🖥️ Server Type", value = serverTypeText, inline = true},
-                    {name = "🌐 Server ID", value = game.JobId, inline = false}
+                    {name = "📐 Target Size", value = "3.0×2.0×1.5", inline = true}
                 }
             )
             
-            print("🎯 DETECTION ACTIVE - Watching for 'Thorn' parts near fields...")
+            print("🎯 DETECTION ACTIVE - Watching for 'Thorn' parts with size 3×2×1.5...")
             print("🔄 Anti-idle system is active!")
             print("🖥️ Server Type:", serverTypeText)
         else
@@ -557,7 +564,6 @@ local function createGUI()
         local mainFrame = gui:FindFirstChild("MainFrame")
         if not mainFrame then return end
         
-        -- Update position
         local char = player.Character
         if char and char:FindFirstChild("HumanoidRootPart") then
             local pos = char.HumanoidRootPart.Position
@@ -567,7 +573,6 @@ local function createGUI()
             end
         end
         
-        -- Update field and detection count
         local fieldLabel = mainFrame:FindFirstChild("FieldLabel")
         if fieldLabel and config.stingerDetected then
             fieldLabel.Text = "Field: 🎯 " .. config.currentField
@@ -581,9 +586,10 @@ local function createGUI()
     end)
 end
 
-print("🐝 Vicious Bee Stinger Detector v3.3 Loaded!")
+print("🐝 Vicious Bee Stinger Detector v3.4 Loaded!")
 print("📱 Opening GUI...")
-print("🎯 This script detects 'Thorn' parts spawning near fields!")
+print("🎯 This script detects 'Thorn' parts (Size: 3×2×1.5) spawning near fields!")
 print("🔄 Anti-idle system enabled!")
 print("🖥️ Server Type:", config.serverType)
+print("✅ Size verification active: Only detects stingers with exact size 3.0×2.0×1.5")
 createGUI()
