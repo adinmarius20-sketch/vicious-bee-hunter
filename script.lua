@@ -36,7 +36,17 @@ end
 player.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new())
-    print("🔄 Anti-idle triggered")
+    print("🔄 Anti-idle triggered (idle detection)")
+end)
+
+-- Additional anti-idle: Trigger every 10 minutes automatically
+spawn(function()
+    while true do
+        wait(600) -- 600 seconds = 10 minutes
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+        print("🔄 Anti-idle triggered (10 min auto)")
+    end
 end)
 
 local fields = {
