@@ -1,5 +1,5 @@
--- Vicious Bee/Object Hunter Script v3.1
--- Detects objects that appear near fields, looks for stinger-like parts
+-- Vicious Bee/Object Hunter Script v3.2
+-- Detects objects that appear in fields, filtered by size and name
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -89,25 +89,28 @@ end
 -- Check if part looks like a stinger/object of interest
 local function isInterestingObject(obj)
     if not obj or not obj:IsA("BasePart") then return false end
-    if obj.Size.Magnitude < 1 then return false end -- ignore tiny parts
 
-    local nameWhitelist = {"C", "Stem", "CorePart"} -- common stinger parts
-    for _, n in ipairs(nameWhitelist) do
+    -- Only consider parts within reasonable field size
+    local field, distance = getClosestField(obj.Position)
+    if distance > 150 then return false end
+
+    -- Ignore tiny or fat parts
+    local size = obj.Size
+    if size.Magnitude < 1 then return false
+    elseif size.Y < 2 or size.X > 2 or size.Z > 2 then return false end
+
+    -- Only consider whitelisted names
+    local whitelist = {"C", "Stem", "CorePart"}
+    for _, n in ipairs(whitelist) do
         if obj.Name == n then
             return true
         end
     end
 
-    -- Optional: any thin, elongated part
-    local size = obj.Size
-    if size.Y >= 2 and size.X < 2 and size.Z < 2 then
-        return true
-    end
-
     return false
 end
 
--- Detect new objects near fields
+-- Detect new objects
 local function onNewObject(obj)
     if not config.isRunning then return end
     task.wait(0.05)
@@ -115,13 +118,10 @@ local function onNewObject(obj)
     if not obj:IsA("BasePart") then return end
     if config._detectedObjects[obj] then return end
 
-    local field, distance = getClosestField(obj.Position)
-    if field == "Unknown" or distance > 150 then return end
-
     if not isInterestingObject(obj) then return end
 
     config._detectedObjects[obj] = true
-    config.currentField = field
+    config.currentField, localDistance = getClosestField(obj.Position)
 
     local playerDistance = "Unknown"
     local char = player.Character
@@ -137,7 +137,7 @@ local function onNewObject(obj)
             {name = "📦 Object Name", value = obj.Name, inline = true},
             {name = "🔧 Type", value = obj.ClassName, inline = true},
             {name = "📍 Field", value = config.currentField, inline = true},
-            {name = "📏 Field Distance", value = math.floor(distance) .. " studs", inline = true},
+            {name = "📏 Field Distance", value = math.floor(localDistance) .. " studs", inline = true},
             {name = "👤 Player Distance", value = playerDistance, inline = true},
             {name = "📐 Size", value = string.format("%.1f, %.1f, %.1f", obj.Size.X, obj.Size.Y, obj.Size.Z), inline = false},
             {name = "🧭 Position", value = string.format("(%.1f, %.1f, %.1f)", obj.Position.X, obj.Position.Y, obj.Position.Z), inline = false},
@@ -145,7 +145,7 @@ local function onNewObject(obj)
         }
     )
 
-    print("🟡 Object Detected Near Field:", obj.Name, "Field:", field)
+    print("🟡 Object Detected Near Field:", obj.Name, "Field:", config.currentField)
 
     obj.AncestryChanged:Connect(function()
         if not obj.Parent then
@@ -225,7 +225,6 @@ local function createGUI()
     InfoLabel.TextWrapped = true
     InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-    -- Position Label
     local PositionLabel = Instance.new("TextLabel", MainFrame)
     PositionLabel.Name = "PositionLabel"
     PositionLabel.BackgroundTransparency = 1
@@ -299,4 +298,4 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-print("🐝 Vicious Bee/Object Detector v3.1 Loaded!")
+print("🐝 Vicious Bee/Object Detector v3.2 Loaded!")
