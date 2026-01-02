@@ -1,11 +1,12 @@
--- Vicious Bee Stinger Hunter Script v3.1 - PERFECTED DETECTION
--- Detects "Thorn" parts that spawn near fields
+-- Vicious Bee Stinger Hunter Script v3.2 - ANTI-IDLE + SMART DETECTION
+-- Detects "Thorn" parts that spawn near fields (ONCE per spawn event)
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser")
 
 local request = request or http_request or syn.request
 local player = Players.LocalPlayer
@@ -17,7 +18,9 @@ local config = {
     currentField = "None",
     _descendantConnection = nil,
     _detectedStingers = {},
-    detectionCount = 0
+    detectionCount = 0,
+    lastDetectionTime = 0,
+    detectionCooldown = 5 -- seconds to wait before detecting again (prevents multiple alerts)
 }
 
 -- Load saved webhook
@@ -28,6 +31,13 @@ if isfile and readfile and isfile("vicious_bee_webhook.txt") then
         print("✅ Loaded saved webhook")
     end
 end
+
+-- ANTI-IDLE SYSTEM
+player.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+    print("🔄 Anti-idle triggered")
+end)
 
 local fields = {
     ["Sunflower Field"] = Vector3.new(183, 4, 165),
@@ -66,7 +76,7 @@ local function sendWebhook(title, description, color, webhookFields)
             Url = config.webhookUrl,
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode({["embeds"] = {embed}})
+            Body = HttpService:JSONEncode({["embeds"] = {embed}, ["content"] = "@everyone"})
         })
     end)
     
@@ -90,7 +100,7 @@ local function getClosestField(position)
     return closestField, closestDistance
 end
 
--- MAIN DETECTION: Specifically looks for "Thorn" parts near fields
+-- SMART DETECTION: Only alert ONCE per spawn event (prevents triple notifications)
 local function onNewObject(obj)
     if not config.isRunning then return end
 
@@ -102,20 +112,28 @@ local function onNewObject(obj)
     -- CRITICAL CHECK: Must be named "Thorn"
     if obj.Name ~= "Thorn" then return end
 
-    -- Avoid duplicate detections
-    if config._detectedStingers[obj] then return end
-
     -- Check if object is close to any field
     local field, distance = getClosestField(obj.Position)
     if field == "Unknown" or distance > 150 then
         return -- ignore objects far from fields
     end
 
+    -- COOLDOWN CHECK: Prevent multiple detections in quick succession
+    local currentTime = tick()
+    if currentTime - config.lastDetectionTime < config.detectionCooldown then
+        print("⏳ Detection cooldown active, ignoring duplicate Thorn...")
+        return
+    end
+
+    -- Avoid duplicate detections of the same object
+    if config._detectedStingers[obj] then return end
+
     -- Mark object as detected
     config._detectedStingers[obj] = true
     config.stingerDetected = true
     config.currentField = field
     config.detectionCount = config.detectionCount + 1
+    config.lastDetectionTime = currentTime
 
     -- Calculate player distance
     local playerDistance = "Unknown"
@@ -130,7 +148,7 @@ local function onNewObject(obj)
     -- Send webhook alert with @everyone ping
     sendWebhook(
         "🎯 VICIOUS BEE STINGER DETECTED!",
-        "@everyone A Thorn part (stinger) has spawned! Go collect it now!",
+        "🚨 A Thorn part (stinger) has spawned! Go collect it NOW!",
         0xFF0000,
         {
             { name = "📦 Object Name", value = obj.Name, inline = true },
@@ -155,6 +173,9 @@ local function onNewObject(obj)
         if not obj.Parent then
             print("⚠️ Stinger removed from workspace")
             config._detectedStingers[obj] = nil
+            -- Don't reset stingerDetected or currentField immediately
+            -- Wait 3 seconds before clearing
+            task.wait(3)
             config.stingerDetected = false
             config.currentField = "None"
         end
@@ -177,6 +198,7 @@ local function createGUI()
     local CloseButton = Instance.new("TextButton")
     local PositionLabel = Instance.new("TextLabel")
     local DetectionCountLabel = Instance.new("TextLabel")
+    local AntiIdleLabel = Instance.new("TextLabel")
     
     ScreenGui.Name = "ViciousBeeHunterGUI"
     ScreenGui.Parent = CoreGui
@@ -186,8 +208,8 @@ local function createGUI()
     MainFrame.Parent = ScreenGui
     MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     MainFrame.BorderSizePixel = 0
-    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -175)
-    MainFrame.Size = UDim2.new(0, 400, 0, 350)
+    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -190)
+    MainFrame.Size = UDim2.new(0, 400, 0, 380)
     MainFrame.Active = true
     MainFrame.Draggable = true
     
@@ -197,7 +219,7 @@ local function createGUI()
     Title.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
     Title.Size = UDim2.new(1, 0, 0, 50)
     Title.Font = Enum.Font.GothamBold
-    Title.Text = "🐝 Vicious Bee Stinger Detector v3.1"
+    Title.Text = "🐝 Vicious Bee Detector v3.2"
     Title.TextColor3 = Color3.fromRGB(20, 20, 20)
     Title.TextSize = 17
     
@@ -271,12 +293,23 @@ local function createGUI()
     DetectionCountLabel.TextSize = 13
     DetectionCountLabel.TextXAlignment = Enum.TextXAlignment.Left
     
+    AntiIdleLabel.Parent = MainFrame
+    AntiIdleLabel.Name = "AntiIdleLabel"
+    AntiIdleLabel.BackgroundTransparency = 1
+    AntiIdleLabel.Position = UDim2.new(0, 20, 0, 260)
+    AntiIdleLabel.Size = UDim2.new(1, -40, 0, 25)
+    AntiIdleLabel.Font = Enum.Font.Gotham
+    AntiIdleLabel.Text = "🔄 Anti-Idle: Active"
+    AntiIdleLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    AntiIdleLabel.TextSize = 13
+    AntiIdleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
     InfoLabel.Parent = MainFrame
     InfoLabel.BackgroundTransparency = 1
-    InfoLabel.Position = UDim2.new(0, 20, 0, 265)
+    InfoLabel.Position = UDim2.new(0, 20, 0, 290)
     InfoLabel.Size = UDim2.new(1, -40, 0, 45)
     InfoLabel.Font = Enum.Font.Gotham
-    InfoLabel.Text = "💡 Detects 'Thorn' parts spawning near any field"
+    InfoLabel.Text = "💡 Detects 'Thorn' parts once per spawn (no duplicates)"
     InfoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
     InfoLabel.TextSize = 11
     InfoLabel.TextWrapped = true
@@ -285,7 +318,7 @@ local function createGUI()
     PositionLabel.Name = "PositionLabel"
     PositionLabel.Parent = MainFrame
     PositionLabel.BackgroundTransparency = 1
-    PositionLabel.Position = UDim2.new(0, 20, 0, 315)
+    PositionLabel.Position = UDim2.new(0, 20, 0, 345)
     PositionLabel.Size = UDim2.new(1, -40, 0, 25)
     PositionLabel.Font = Enum.Font.Gotham
     PositionLabel.Text = "Position: Waiting..."
@@ -324,12 +357,13 @@ local function createGUI()
             
             sendWebhook(
                 "🚀 Detection Started", 
-                "Now monitoring for Vicious Bee stinger spawns (Thorn parts) in this server!", 
+                "Now monitoring for Vicious Bee stinger spawns (Thorn parts) in this server! Anti-idle is active.", 
                 0x00AAFF, 
                 {{name = "🌐 Server ID", value = game.JobId, inline = false}}
             )
             
             print("🎯 DETECTION ACTIVE - Watching for 'Thorn' parts near fields...")
+            print("🔄 Anti-idle system is active!")
         else
             config.isRunning = false
             
@@ -388,7 +422,8 @@ local function createGUI()
     end)
 end
 
-print("🐝 Vicious Bee Stinger Detector v3.1 Loaded!")
+print("🐝 Vicious Bee Stinger Detector v3.2 Loaded!")
 print("📱 Opening GUI...")
 print("🎯 This script detects 'Thorn' parts spawning near fields!")
+print("🔄 Anti-idle system enabled!")
 createGUI()
