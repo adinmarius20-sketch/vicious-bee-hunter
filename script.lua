@@ -154,8 +154,8 @@ local function generateJoinLink()
     else
         local placeId = game.PlaceId
         local jobId = game.JobId
-        -- This format works for clicking from Discord
-        return string.format("https://www.roblox.com/games/start?placeId=%d&launchData=%%7B%%22gameId%%22%%3A%%22%s%%22%%7D", placeId, jobId)
+        -- Use Roblox's deep link format that actually works
+        return string.format("roblox://experiences/start?placeId=%d&gameInstanceId=%s", placeId, jobId)
     end
 end
 
