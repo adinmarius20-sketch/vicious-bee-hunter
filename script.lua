@@ -90,59 +90,7 @@ end
 
 -- MAIN DETECTION: Check if object could be a stinger (STRICT)
 -- MAIN DETECTION: Check if object could be a stinger
-local function couldBeStinger(obj)
-    if not obj or not obj:IsA("BasePart") then return false end
-
-    -- Only consider anchored parts
-    if not obj.Anchored then return false end
-
-    -- Define realistic stinger size range
-    local minSize = Vector3.new(1, 2, 1)    -- ignore tiny spikes
-    local maxSize = Vector3.new(10, 10, 10) -- ignore huge random objects
-
-    if obj.Size.X < minSize.X or obj.Size.Y < minSize.Y or obj.Size.Z < minSize.Z then
-        return false
-    end
-    if obj.Size.X > maxSize.X or obj.Size.Y > maxSize.Y or obj.Size.Z > maxSize.Z then
-        return false
-    end
-
-    -- Step 1: Detect the actual stinger CorePart
-    if obj.Name == "CorePart" then
-        print("🎯 DETECTED REAL STINGER (CorePart)")
-        return true
-    end
-
-    -- Step 2: Optional: detect small decorative spikes poking out
-    local decorativeNames = { "Stem", "C" } -- add any others you notice
-    for _, name in ipairs(decorativeNames) do
-        if obj.Name == name then
-            -- Only trigger if size is small but still noticeable
-            if obj.Size.Magnitude >= 1 then
-                print("⚠️ Decorative spike detected:", obj.Name)
-                return true
-            end
-        end
-    end
-
-    -- Step 3: Fallback for MeshParts or SpecialMeshes (in case future stingers use them)
-    if obj:IsA("MeshPart") or obj:FindFirstChildOfClass("SpecialMesh") then
-        print("⚠️ Possible mesh-based stinger:", obj.Name)
-        return true
-    end
-
-    -- Step 4: Optional: any BasePart near a field, within reasonable size
-    local field, distance = getClosestField(obj.Position)
-    if field ~= "Unknown" and distance < 150 then
-        print("⚠️ BasePart near field detected:", obj.Name)
-        return true
-    end
-
-    return false
-end
-
--- IMPROVED: Detect new objects spawning ANYWHERE in the game
--- Detect new objects spawning anywhere
+-- Detect ANY object spawning near fields
 local function onNewObject(obj)
     if not config.isRunning then return end
 
@@ -154,26 +102,16 @@ local function onNewObject(obj)
     -- Avoid duplicate detections
     if config._detectedStingers[obj] then return end
 
-    -- Check if it could be a stinger
-    local isStinger = couldBeStinger(obj)
-    if not isStinger then return end
-
-    -- Only alert for the real stinger or noticeable spikes
-    local alert = false
-    if obj.Name == "CorePart" then
-        alert = true -- always alert for CorePart
-    elseif obj.Name == "Stem" or obj.Name == "C" then
-        -- optional: only alert if it’s reasonably sized (to ignore tiny pokes)
-        if obj.Size.Magnitude >= 1.5 then
-            alert = true
-        end
+    -- Check if object is close to any field
+    local field, distance = getClosestField(obj.Position)
+    if field == "Unknown" or distance > 150 then
+        return -- ignore objects far from fields
     end
 
-    if not alert then return end
-
+    -- Mark object as detected
     config._detectedStingers[obj] = true
     config.stingerDetected = true
-    config.currentField, localDistance = getClosestField(obj.Position)
+    config.currentField = field
 
     -- Calculate player distance
     local playerDistance = "Unknown"
@@ -187,14 +125,14 @@ local function onNewObject(obj)
 
     -- Send webhook alert
     sendWebhook(
-        "🎯 VICIOUS BEE STINGER DETECTED!",
-        "A suspicious object matching stinger characteristics has spawned.",
-        0xFF0000,
+        "🟡 Object Detected in Field!",
+        "A new object has spawned near a field.",
+        0xFFFF00,
         {
             { name = "📦 Object Name", value = obj.Name, inline = true },
             { name = "🔧 Type", value = obj.ClassName, inline = true },
             { name = "📍 Field", value = config.currentField, inline = true },
-            { name = "📏 Field Distance", value = math.floor(localDistance) .. " studs", inline = true },
+            { name = "📏 Field Distance", value = math.floor(distance) .. " studs", inline = true },
             { name = "👤 Player Distance", value = playerDistance, inline = true },
             { name = "📐 Size", value = string.format("%.1f, %.1f, %.1f", obj.Size.X, obj.Size.Y, obj.Size.Z), inline = false },
             { name = "🧭 Position", value = string.format("(%.1f, %.1f, %.1f)", obj.Position.X, obj.Position.Y, obj.Position.Z), inline = false },
@@ -202,15 +140,15 @@ local function onNewObject(obj)
         }
     )
 
-    print("🎯 STINGER ALERT SENT!")
+    print("🟡 Object Detected Near Field!")
     print("📦 Object:", obj.Name)
     print("📍 Field:", config.currentField)
-    print("📏 Field Distance:", localDistance, "studs")
+    print("📏 Field Distance:", distance, "studs")
 
     -- Clean up if removed
     obj.AncestryChanged:Connect(function()
         if not obj.Parent then
-            print("⚠️ Stinger removed from workspace")
+            print("⚠️ Object removed from workspace")
             config._detectedStingers[obj] = nil
             config.stingerDetected = false
             config.currentField = "None"
