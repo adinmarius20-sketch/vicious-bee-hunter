@@ -90,40 +90,52 @@ end
 
 -- MAIN DETECTION: Check if object could be a stinger (STRICT)
 local function couldBeStinger(obj)
-    if not obj or not obj:IsA("BasePart") then return false end
-
-    -- Must be anchored and solid
-    if not obj.Anchored or not obj.CanCollide then return false end
-
-    -- Must be near a known field
-    local field, fieldDist = getClosestField(obj.Position)
-    if field == "Unknown" or fieldDist > 120 then return false end
-
-    -- Must be at or slightly below field height (stingers are buried)
-    local fieldY = fields[field].Y
-    if obj.Position.Y > fieldY + 8 or obj.Position.Y < fieldY - 25 then
+    if not obj or not obj:IsA("BasePart") then
         return false
     end
 
-    -- Size check (real stingers are NOT tall cones)
-    if obj.Size.X < 1.5 or obj.Size.Y < 1.5 or obj.Size.Z < 1.5 then return false end
-    if obj.Size.X > 15 or obj.Size.Y > 15 or obj.Size.Z > 15 then return false end
+    -- Real stinger is ALWAYS anchored
+    if not obj.Anchored then
+        return false
+    end
 
-    -- Dark color check (stingers are dark)
-    local c = obj.Color
-    local brightness = (c.R + c.G + c.B) / 3
-    if brightness > 0.35 then return false end
+    -- Must spawn near a flower field (most important rule)
+    local field, fieldDist = getClosestField(obj.Position)
+    if field == "Unknown" or fieldDist > 200 then
+        return false
+    end
 
-    -- Mesh-based stingers (this is what Bee Swarm uses)
-    if obj:IsA("MeshPart") or obj:FindFirstChildOfClass("SpecialMesh") then
-        print("✅ STINGER MATCH (mesh-based)")
+    -- Ignore tiny junk (VERY loose)
+    if obj.Size.Magnitude < 1.5 then
+        return false
+    end
+
+    -- SIGNALS (only ONE needed)
+    local signals = 0
+
+    -- Walk-through trigger (VERY important)
+    if obj.CanCollide == false then
+        signals += 1
+    end
+
+    -- Touch trigger (used to spawn the bee)
+    if obj:FindFirstChildOfClass("TouchTransmitter") then
+        signals += 1
+    end
+
+    -- Often a MeshPart
+    if obj:IsA("MeshPart") then
+        signals += 1
+    end
+
+    if signals >= 1 then
+        print("🐝 LIKELY VICIOUS BEE STINGER")
         return true
     end
 
-    -- Fallback (still matches real stingers)
-    print("⚠️ POSSIBLE STINGER (generic part)")
-    return true
+    return false
 end
+
 
 -- IMPROVED: Detect new objects spawning ANYWHERE in the game
 local function onNewObject(obj)
