@@ -189,7 +189,7 @@ local function onNewObject(obj)
     -- Send webhook alert with @everyone ping
     sendWebhook(
         "🎯 VICIOUS BEE STINGER DETECTED!",
-        "🚨 A Thorn part (stinger) has spawned! Go collect it NOW!\n\n**Click the link below to join this server instantly!**",
+        "🚨 A stinger was found!\n\n**Click the link below to join this server instantly!**",
         0xFF0000,
         {
             { name = "📦 Object Name", value = obj.Name, inline = true },
