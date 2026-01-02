@@ -92,41 +92,37 @@ end
 local function couldBeStinger(obj)
     if not obj or not obj:IsA("BasePart") then return false end
 
-    -- 1️⃣ Core trigger: always detect
+    -- 1️⃣ CorePart is the main stinger
     if obj.Name == "CorePart" then
         print("✅ DETECTED REAL STINGER (CorePart)")
         return true
     end
 
-    -- 2️⃣ Decorative spikes or poking-out parts
-    local spikeNames = {"Stem", "C"} -- add more if needed
+    -- 2️⃣ Check for spikes/poking parts near CorePart
+    local spikeNames = {"Stem", "C"} -- add more if you notice others
     for _, name in ipairs(spikeNames) do
         if obj.Name == name then
-            print("⚠️ DETECTED STINGER TIP/POKE-OUT:", obj.Name)
-            return true
+            -- Look for nearby CorePart (within 5 studs)
+            for _, part in ipairs(workspace:GetDescendants()) do
+                if part.Name == "CorePart" and part:IsA("BasePart") then
+                    if (part.Position - obj.Position).Magnitude <= 5 then
+                        print("⚠️ Detected spike near CorePart:", obj.Name)
+                        return true
+                    end
+                end
+            end
         end
     end
 
-    -- 3️⃣ Mesh fallback: in case stinger uses MeshPart or SpecialMesh
+    -- 3️⃣ Mesh fallback: in case future stingers use MeshParts
     if obj:IsA("MeshPart") or obj:FindFirstChildOfClass("SpecialMesh") then
         print("⚠️ POSSIBLE STINGER (mesh-based):", obj.Name)
         return true
     end
 
-    -- 4️⃣ Lenient fallback: any BasePart near a known field
-    local field, distance = getClosestField(obj.Position)
-    if field ~= "Unknown" and distance < 120 then
-        if obj.Anchored then
-            print("⚠️ POSSIBLE STINGER (generic part near field):", obj.Name)
-            return true
-        end
-    end
-
+    -- Otherwise, ignore unrelated parts
     return false
 end
-
-
-
 
 -- IMPROVED: Detect new objects spawning ANYWHERE in the game
 local function onNewObject(obj)
