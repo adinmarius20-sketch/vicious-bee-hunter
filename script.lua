@@ -1,10 +1,11 @@
--- Vicious Bee Stinger Hunter Script v3.0 - STAY IN SERVER
--- Detects stinger when it spawns - NO SERVER HOPPING
+-- Vicious Bee Stinger Hunter Script v3.1 - PERFECTED DETECTION
+-- Detects "Thorn" parts that spawn near fields
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
 
 local request = request or http_request or syn.request
 local player = Players.LocalPlayer
@@ -15,7 +16,8 @@ local config = {
     stingerDetected = false,
     currentField = "None",
     _descendantConnection = nil,
-    _detectedStingers = {}
+    _detectedStingers = {},
+    detectionCount = 0
 }
 
 -- Load saved webhook
@@ -88,9 +90,7 @@ local function getClosestField(position)
     return closestField, closestDistance
 end
 
--- MAIN DETECTION: Check if object could be a stinger (STRICT)
--- MAIN DETECTION: Check if object could be a stinger
--- Detect ANY object spawning near fields
+-- MAIN DETECTION: Specifically looks for "Thorn" parts near fields
 local function onNewObject(obj)
     if not config.isRunning then return end
 
@@ -98,6 +98,8 @@ local function onNewObject(obj)
 
     if not obj or not obj.Parent then return end
     if not obj:IsA("BasePart") then return end
+    
+    -- CRITICAL CHECK: Must be named "Thorn"
     if obj.Name ~= "Thorn" then return end
 
     -- Avoid duplicate detections
@@ -113,6 +115,7 @@ local function onNewObject(obj)
     config._detectedStingers[obj] = true
     config.stingerDetected = true
     config.currentField = field
+    config.detectionCount = config.detectionCount + 1
 
     -- Calculate player distance
     local playerDistance = "Unknown"
@@ -124,30 +127,33 @@ local function onNewObject(obj)
         end
     end
 
-    -- Send webhook alert
+    -- Send webhook alert with @everyone ping
     sendWebhook(
-    "🎯 Vicious Bee Stinger Found!",
-    "A Thorn part matching the stinger has spawned near a field!",
-    0xFF0000,
-    {
-        { name = "📦 Object Name", value = obj.Name, inline = true },
-        { name = "🔧 Type", value = obj.ClassName, inline = true },
-        { name = "📍 Field", value = config.currentField, inline = true },
-        { name = "📏 Field Distance", value = math.floor(distance) .. " studs", inline = true },
-        { name = "👤 Player Distance", value = playerDistance, inline = true },
-        { name = "📐 Size", value = string.format("%.1f, %.1f, %.1f", obj.Size.X, obj.Size.Y, obj.Size.Z), inline = false },
-        { name = "🧭 Position", value = string.format("(%.1f, %.1f, %.1f)", obj.Position.X, obj.Position.Y, obj.Position.Z), inline = false },
-        { name = "🌐 Server ID", value = game.JobId, inline = false }
-    }
-)
+        "🎯 VICIOUS BEE STINGER DETECTED!",
+        "@everyone A Thorn part (stinger) has spawned! Go collect it now!",
+        0xFF0000,
+        {
+            { name = "📦 Object Name", value = obj.Name, inline = true },
+            { name = "🔧 Type", value = obj.ClassName, inline = true },
+            { name = "📍 Field", value = config.currentField, inline = true },
+            { name = "📏 Field Distance", value = math.floor(distance) .. " studs", inline = true },
+            { name = "👤 Player Distance", value = playerDistance, inline = true },
+            { name = "📐 Size", value = string.format("%.1f, %.1f, %.1f", obj.Size.X, obj.Size.Y, obj.Size.Z), inline = false },
+            { name = "🧭 Position", value = string.format("(%.1f, %.1f, %.1f)", obj.Position.X, obj.Position.Y, obj.Position.Z), inline = false },
+            { name = "🌐 Server ID", value = game.JobId, inline = false },
+            { name = "🔢 Detection #", value = tostring(config.detectionCount), inline = true }
+        }
+    )
 
-
-    print("🎯 Vicious Bee Stinger Detected in Field!", "📍 Field:", config.currentField)
+    print("🎯 VICIOUS BEE STINGER DETECTED!")
+    print("📍 Field:", config.currentField)
+    print("📏 Distance from field:", math.floor(distance), "studs")
+    print("🔢 Detection count:", config.detectionCount)
 
     -- Clean up if removed
     obj.AncestryChanged:Connect(function()
         if not obj.Parent then
-            print("⚠️ Object removed from workspace")
+            print("⚠️ Stinger removed from workspace")
             config._detectedStingers[obj] = nil
             config.stingerDetected = false
             config.currentField = "None"
@@ -169,6 +175,8 @@ local function createGUI()
     local FieldLabel = Instance.new("TextLabel")
     local InfoLabel = Instance.new("TextLabel")
     local CloseButton = Instance.new("TextButton")
+    local PositionLabel = Instance.new("TextLabel")
+    local DetectionCountLabel = Instance.new("TextLabel")
     
     ScreenGui.Name = "ViciousBeeHunterGUI"
     ScreenGui.Parent = CoreGui
@@ -178,8 +186,8 @@ local function createGUI()
     MainFrame.Parent = ScreenGui
     MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     MainFrame.BorderSizePixel = 0
-    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -150)
-    MainFrame.Size = UDim2.new(0, 400, 0, 300)
+    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -175)
+    MainFrame.Size = UDim2.new(0, 400, 0, 350)
     MainFrame.Active = true
     MainFrame.Draggable = true
     
@@ -189,7 +197,7 @@ local function createGUI()
     Title.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
     Title.Size = UDim2.new(1, 0, 0, 50)
     Title.Font = Enum.Font.GothamBold
-    Title.Text = "🐝 Vicious Bee Stinger Detector"
+    Title.Text = "🐝 Vicious Bee Stinger Detector v3.1"
     Title.TextColor3 = Color3.fromRGB(20, 20, 20)
     Title.TextSize = 17
     
@@ -231,6 +239,7 @@ local function createGUI()
     Instance.new("UICorner", StartButton).CornerRadius = UDim.new(0, 8)
     
     StatusLabel.Parent = MainFrame
+    StatusLabel.Name = "StatusLabel"
     StatusLabel.BackgroundTransparency = 1
     StatusLabel.Position = UDim2.new(0, 20, 0, 185)
     StatusLabel.Size = UDim2.new(1, -40, 0, 25)
@@ -241,6 +250,7 @@ local function createGUI()
     StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
     
     FieldLabel.Parent = MainFrame
+    FieldLabel.Name = "FieldLabel"
     FieldLabel.BackgroundTransparency = 1
     FieldLabel.Position = UDim2.new(0, 20, 0, 210)
     FieldLabel.Size = UDim2.new(1, -40, 0, 25)
@@ -250,29 +260,38 @@ local function createGUI()
     FieldLabel.TextSize = 13
     FieldLabel.TextXAlignment = Enum.TextXAlignment.Left
     
+    DetectionCountLabel.Parent = MainFrame
+    DetectionCountLabel.Name = "DetectionCountLabel"
+    DetectionCountLabel.BackgroundTransparency = 1
+    DetectionCountLabel.Position = UDim2.new(0, 20, 0, 235)
+    DetectionCountLabel.Size = UDim2.new(1, -40, 0, 25)
+    DetectionCountLabel.Font = Enum.Font.Gotham
+    DetectionCountLabel.Text = "Detections: 0"
+    DetectionCountLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+    DetectionCountLabel.TextSize = 13
+    DetectionCountLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
     InfoLabel.Parent = MainFrame
     InfoLabel.BackgroundTransparency = 1
-    InfoLabel.Position = UDim2.new(0, 20, 0, 240)
+    InfoLabel.Position = UDim2.new(0, 20, 0, 265)
     InfoLabel.Size = UDim2.new(1, -40, 0, 45)
     InfoLabel.Font = Enum.Font.Gotham
-    InfoLabel.Text = "💡 Monitors ENTIRE GAME for stinger spawns anywhere"
+    InfoLabel.Text = "💡 Detects 'Thorn' parts spawning near any field"
     InfoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
     InfoLabel.TextSize = 11
     InfoLabel.TextWrapped = true
     InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-    local PositionLabel = Instance.new("TextLabel")
-    PositionLabel.Name = "PositionLabel" -- important to name it
+    PositionLabel.Name = "PositionLabel"
     PositionLabel.Parent = MainFrame
     PositionLabel.BackgroundTransparency = 1
-    PositionLabel.Position = UDim2.new(0, 20, 0, 285)
+    PositionLabel.Position = UDim2.new(0, 20, 0, 315)
     PositionLabel.Size = UDim2.new(1, -40, 0, 25)
     PositionLabel.Font = Enum.Font.Gotham
-    PositionLabel.Text = "Position: (X, Y, Z)"
+    PositionLabel.Text = "Position: Waiting..."
     PositionLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
     PositionLabel.TextSize = 13
     PositionLabel.TextXAlignment = Enum.TextXAlignment.Left
-
     
     StartButton.MouseButton1Click:Connect(function()
         if not config.isRunning then
@@ -295,22 +314,22 @@ local function createGUI()
             -- Connect the listener for new objects EVERYWHERE in the game
             if not config._descendantConnection then
                 config._descendantConnection = game.DescendantAdded:Connect(onNewObject)
-                print("✅ Monitoring ENTIRE GAME for new objects...")
+                print("✅ Monitoring entire game for 'Thorn' parts...")
             end
             
             StartButton.Text = "STOP DETECTING"
             StartButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-            StatusLabel.Text = "Status: 👀 Watching for stingers..."
+            StatusLabel.Text = "Status: 👀 Watching for 'Thorn' parts..."
             StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
             
             sendWebhook(
                 "🚀 Detection Started", 
-                "Now monitoring for Vicious Bee stinger spawns in this server!", 
+                "Now monitoring for Vicious Bee stinger spawns (Thorn parts) in this server!", 
                 0x00AAFF, 
                 {{name = "🌐 Server ID", value = game.JobId, inline = false}}
             )
             
-            print("🎯 DETECTION ACTIVE - Watching for new objects...")
+            print("🎯 DETECTION ACTIVE - Watching for 'Thorn' parts near fields...")
         else
             config.isRunning = false
             
@@ -336,24 +355,40 @@ local function createGUI()
         end
         ScreenGui:Destroy()
     end)
-end
-
-print("🐝 Vicious Bee Stinger Detector v3.0 Loaded!")
-print("📱 Opening GUI...")
-print("🎯 This script stays in ONE server and watches for stinger spawns!")
-createGUI()
-local RunService = game:GetService("RunService")
-
-RunService.RenderStepped:Connect(function()
-    local char = player.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        local pos = char.HumanoidRootPart.Position
+    
+    -- Update GUI labels in real-time
+    RunService.RenderStepped:Connect(function()
         local gui = CoreGui:FindFirstChild("ViciousBeeHunterGUI")
-        if gui then
-            local label = gui.MainFrame:FindFirstChild("PositionLabel")
-            if label then
-                label.Text = string.format("Position: (%.1f, %.1f, %.1f)", pos.X, pos.Y, pos.Z)
+        if not gui then return end
+        
+        local mainFrame = gui:FindFirstChild("MainFrame")
+        if not mainFrame then return end
+        
+        -- Update position
+        local char = player.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local pos = char.HumanoidRootPart.Position
+            local posLabel = mainFrame:FindFirstChild("PositionLabel")
+            if posLabel then
+                posLabel.Text = string.format("Position: (%.1f, %.1f, %.1f)", pos.X, pos.Y, pos.Z)
             end
         end
-    end
-end)
+        
+        -- Update field and detection count
+        local fieldLabel = mainFrame:FindFirstChild("FieldLabel")
+        if fieldLabel and config.stingerDetected then
+            fieldLabel.Text = "Field: 🎯 " .. config.currentField
+            fieldLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+        end
+        
+        local countLabel = mainFrame:FindFirstChild("DetectionCountLabel")
+        if countLabel then
+            countLabel.Text = "Detections: " .. config.detectionCount
+        end
+    end)
+end
+
+print("🐝 Vicious Bee Stinger Detector v3.1 Loaded!")
+print("📱 Opening GUI...")
+print("🎯 This script detects 'Thorn' parts spawning near fields!")
+createGUI()
