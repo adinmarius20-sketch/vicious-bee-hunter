@@ -1,10 +1,10 @@
--- Vicious Bee Stinger Hunter Script v3.0 - STAY IN SERVER
--- Detects stinger when it spawns - NO SERVER HOPPING
+-- Vicious Bee Stinger Detector - ONLY detects "Thorn" parts
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
 
 local request = request or http_request or syn.request
 local player = Players.LocalPlayer
@@ -12,10 +12,9 @@ local player = Players.LocalPlayer
 local config = {
     webhookUrl = "",
     isRunning = false,
-    stingerDetected = false,
-    currentField = "None",
     _descendantConnection = nil,
-    _detectedStingers = {}
+    _detectedStingers = {},
+    currentField = "None"
 }
 
 -- Load saved webhook
@@ -27,6 +26,7 @@ if isfile and readfile and isfile("vicious_bee_webhook.txt") then
     end
 end
 
+-- Fields
 local fields = {
     ["Sunflower Field"] = Vector3.new(183, 4, 165),
     ["Mushroom Field"] = Vector3.new(-253, 4, 299),
@@ -47,302 +47,192 @@ local fields = {
     ["Mountain Top Field"] = Vector3.new(76, 176, -191)
 }
 
-local function sendWebhook(title, description, color, webhookFields)
+-- Helper: find closest field
+local function getClosestField(pos)
+    local closestField = "Unknown"
+    local closestDistance = math.huge
+    for name, fPos in pairs(fields) do
+        local dist = (pos - fPos).Magnitude
+        if dist < closestDistance then
+            closestDistance = dist
+            closestField = name
+        end
+    end
+    return closestField, closestDistance
+end
+
+-- Webhook sender
+local function sendWebhook(title, description, color, fieldsData)
     if config.webhookUrl == "" then return end
-    
     local embed = {
-        ["title"] = title,
-        ["description"] = description,
-        ["color"] = color,
-        ["fields"] = webhookFields or {},
-        ["timestamp"] = DateTime.now():ToIsoDate(),
-        ["footer"] = {["text"] = "Vicious Bee Hunter | " .. player.Name}
+        title = title,
+        description = description,
+        color = color,
+        fields = fieldsData or {},
+        timestamp = DateTime.now():ToIsoDate(),
+        footer = {text = "Vicious Bee Hunter | " .. player.Name}
     }
-    
-    local success, err = pcall(function()
+    pcall(function()
         request({
             Url = config.webhookUrl,
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode({["embeds"] = {embed}})
+            Body = HttpService:JSONEncode({embeds = {embed}})
         })
     end)
-    
-    if not success then
-        warn("Webhook failed:", err)
-    end
 end
 
-local function getClosestField(position)
-    local closestField = "Unknown"
-    local closestDistance = math.huge
-    
-    for fieldName, fieldPos in pairs(fields) do
-        local dist = (position - fieldPos).Magnitude
-        if dist < closestDistance then
-            closestDistance = dist
-            closestField = fieldName
-        end
-    end
-    
-    return closestField, closestDistance
-end
-
--- MAIN DETECTION: Check if object could be a stinger (STRICT)
+-- Detect "Thorn" parts
 local function onNewObject(obj)
     if not config.isRunning then return end
-
-    task.wait(0.05) -- let object fully load
-
+    task.wait(0.05)
     if not obj or not obj.Parent then return end
-
-    -- Avoid duplicate detections
+    if obj.Name ~= "Thorn" then return end -- ONLY Thorn parts
     if config._detectedStingers[obj] then return end
 
-    -- Check if object is close to any field
-    local field, distance = getClosestField(obj.Position or (obj.PrimaryPart and obj.PrimaryPart.Position) or Vector3.new(0,0,0))
-    if field == "Unknown" or distance > 150 then
-        return -- ignore objects far from fields
-    end
+    local pos = obj.Position
+    local field, distance = getClosestField(pos)
+    if field == "Unknown" or distance > 150 then return end -- must be near field
 
-    -- Mark object as detected
     config._detectedStingers[obj] = true
-    config.stingerDetected = true
     config.currentField = field
 
-    -- Calculate player distance (optional)
     local playerDistance = "Unknown"
     local char = player.Character
     if char and char:FindFirstChild("HumanoidRootPart") then
-        local objPos = obj.Position or (obj.PrimaryPart and obj.PrimaryPart.Position) or Vector3.new(0,0,0)
-        playerDistance = math.floor((char.HumanoidRootPart.Position - objPos).Magnitude) .. " studs"
+        playerDistance = math.floor((char.HumanoidRootPart.Position - pos).Magnitude) .. " studs"
     end
 
     -- Send webhook alert
-    local objPos = obj.Position or (obj.PrimaryPart and obj.PrimaryPart.Position) or Vector3.new(0,0,0)
-    local sizeStr = "N/A"
-    if obj:IsA("BasePart") then
-        sizeStr = string.format("%.1f, %.1f, %.1f", obj.Size.X, obj.Size.Y, obj.Size.Z)
-    end
-
     sendWebhook(
-        "🟡 Object Detected in Field!",
-        "A new object has spawned near a field.",
-        0xFFFF00,
+        "🎯 Vicious Bee Stinger Found!",
+        "A **Thorn** part matching the stinger has spawned!",
+        0xFF0000,
         {
-            { name = "📦 Object Name", value = obj.Name, inline = true },
-            { name = "🔧 Type", value = obj.ClassName, inline = true },
-            { name = "📍 Field", value = config.currentField, inline = true },
-            { name = "📏 Field Distance", value = math.floor(distance) .. " studs", inline = true },
-            { name = "👤 Player Distance", value = playerDistance, inline = true },
-            { name = "📐 Size", value = sizeStr, inline = false },
-            { name = "🧭 Position", value = string.format("(%.1f, %.1f, %.1f)", objPos.X, objPos.Y, objPos.Z), inline = false },
-            { name = "🌐 Server ID", value = game.JobId, inline = false }
+            {name = "📦 Object Name", value = obj.Name, inline = true},
+            {name = "🔧 Type", value = obj.ClassName, inline = true},
+            {name = "📍 Field", value = field, inline = true},
+            {name = "📏 Field Distance", value = math.floor(distance).." studs", inline = true},
+            {name = "👤 Player Distance", value = playerDistance, inline = true},
+            {name = "📐 Size", value = string.format("%.1f, %.1f, %.1f", obj.Size.X, obj.Size.Y, obj.Size.Z), inline = false},
+            {name = "🧭 Position", value = string.format("(%.1f, %.1f, %.1f)", pos.X, pos.Y, pos.Z), inline = false},
+            {name = "🌐 Server ID", value = game.JobId, inline = false}
         }
     )
 
-    print("🟡 Object Detected Near Field!", obj.Name, "Field:", config.currentField)
+    print("🎯 Vicious Bee Stinger Detected!", "Field:", field)
 
-    -- Clean up if removed
+    -- Remove from tracking if deleted
     obj.AncestryChanged:Connect(function()
         if not obj.Parent then
             config._detectedStingers[obj] = nil
-            config.stingerDetected = false
             config.currentField = "None"
         end
     end)
 end
 
-
+-- GUI
 local function createGUI()
     if CoreGui:FindFirstChild("ViciousBeeHunterGUI") then
         CoreGui:FindFirstChild("ViciousBeeHunterGUI"):Destroy()
     end
-    
-    local ScreenGui = Instance.new("ScreenGui")
-    local MainFrame = Instance.new("Frame")
-    local Title = Instance.new("TextLabel")
-    local WebhookBox = Instance.new("TextBox")
-    local StartButton = Instance.new("TextButton")
-    local StatusLabel = Instance.new("TextLabel")
-    local FieldLabel = Instance.new("TextLabel")
-    local InfoLabel = Instance.new("TextLabel")
-    local CloseButton = Instance.new("TextButton")
-    
+    local ScreenGui = Instance.new("ScreenGui", CoreGui)
     ScreenGui.Name = "ViciousBeeHunterGUI"
-    ScreenGui.Parent = CoreGui
-    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    
-    MainFrame.Name = "MainFrame"
-    MainFrame.Parent = ScreenGui
-    MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-    MainFrame.BorderSizePixel = 0
-    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -150)
-    MainFrame.Size = UDim2.new(0, 400, 0, 300)
+
+    local MainFrame = Instance.new("Frame", ScreenGui)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(30,30,35)
+    MainFrame.Size = UDim2.new(0,400,0,300)
+    MainFrame.Position = UDim2.new(0.5,-200,0.5,-150)
     MainFrame.Active = true
     MainFrame.Draggable = true
-    
-    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
-    
-    Title.Parent = MainFrame
-    Title.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
-    Title.Size = UDim2.new(1, 0, 0, 50)
-    Title.Font = Enum.Font.GothamBold
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
+
+    local Title = Instance.new("TextLabel", MainFrame)
+    Title.Size = UDim2.new(1,0,0,50)
+    Title.BackgroundColor3 = Color3.fromRGB(255,200,50)
     Title.Text = "🐝 Vicious Bee Stinger Detector"
-    Title.TextColor3 = Color3.fromRGB(20, 20, 20)
+    Title.Font = Enum.Font.GothamBold
+    Title.TextColor3 = Color3.fromRGB(20,20,20)
     Title.TextSize = 17
-    
-    Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 12)
-    
-    CloseButton.Parent = MainFrame
-    CloseButton.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
-    CloseButton.Position = UDim2.new(1, -35, 0, 10)
-    CloseButton.Size = UDim2.new(0, 30, 0, 30)
-    CloseButton.Font = Enum.Font.GothamBold
-    CloseButton.Text = "X"
-    CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    CloseButton.TextSize = 16
-    
-    Instance.new("UICorner", CloseButton)
-    
-    WebhookBox.Parent = MainFrame
-    WebhookBox.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-    WebhookBox.Position = UDim2.new(0, 20, 0, 70)
-    WebhookBox.Size = UDim2.new(1, -40, 0, 40)
-    WebhookBox.Font = Enum.Font.Gotham
+    Instance.new("UICorner", Title).CornerRadius = UDim.new(0,12)
+
+    local WebhookBox = Instance.new("TextBox", MainFrame)
+    WebhookBox.Size = UDim2.new(1,-40,0,40)
+    WebhookBox.Position = UDim2.new(0,20,0,70)
+    WebhookBox.BackgroundColor3 = Color3.fromRGB(45,45,50)
     WebhookBox.PlaceholderText = "Enter Discord Webhook URL..."
     WebhookBox.Text = config.webhookUrl
-    WebhookBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    WebhookBox.TextColor3 = Color3.fromRGB(255,255,255)
     WebhookBox.TextSize = 14
-    WebhookBox.ClearTextOnFocus = false
-    
-    Instance.new("UICorner", WebhookBox).CornerRadius = UDim.new(0, 8)
-    
-    StartButton.Parent = MainFrame
-    StartButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    StartButton.Position = UDim2.new(0, 20, 0, 125)
-    StartButton.Size = UDim2.new(1, -40, 0, 45)
-    StartButton.Font = Enum.Font.GothamBold
+    Instance.new("UICorner", WebhookBox).CornerRadius = UDim.new(0,8)
+
+    local StartButton = Instance.new("TextButton", MainFrame)
+    StartButton.Size = UDim2.new(1,-40,0,45)
+    StartButton.Position = UDim2.new(0,20,0,125)
+    StartButton.BackgroundColor3 = Color3.fromRGB(50,200,50)
     StartButton.Text = "START DETECTING"
-    StartButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    StartButton.Font = Enum.Font.GothamBold
+    StartButton.TextColor3 = Color3.fromRGB(255,255,255)
     StartButton.TextSize = 16
-    
-    Instance.new("UICorner", StartButton).CornerRadius = UDim.new(0, 8)
-    
-    StatusLabel.Parent = MainFrame
+    Instance.new("UICorner", StartButton).CornerRadius = UDim.new(0,8)
+
+    local StatusLabel = Instance.new("TextLabel", MainFrame)
+    StatusLabel.Size = UDim2.new(1,-40,0,25)
+    StatusLabel.Position = UDim2.new(0,20,0,185)
     StatusLabel.BackgroundTransparency = 1
-    StatusLabel.Position = UDim2.new(0, 20, 0, 185)
-    StatusLabel.Size = UDim2.new(1, -40, 0, 25)
     StatusLabel.Font = Enum.Font.GothamBold
-    StatusLabel.Text = "Status: Idle"
-    StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
     StatusLabel.TextSize = 14
     StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
-    
-    FieldLabel.Parent = MainFrame
-    FieldLabel.BackgroundTransparency = 1
-    FieldLabel.Position = UDim2.new(0, 20, 0, 210)
-    FieldLabel.Size = UDim2.new(1, -40, 0, 25)
-    FieldLabel.Font = Enum.Font.Gotham
-    FieldLabel.Text = "Field: Waiting..."
-    FieldLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-    FieldLabel.TextSize = 13
-    FieldLabel.TextXAlignment = Enum.TextXAlignment.Left
-    
-    InfoLabel.Parent = MainFrame
-    InfoLabel.BackgroundTransparency = 1
-    InfoLabel.Position = UDim2.new(0, 20, 0, 240)
-    InfoLabel.Size = UDim2.new(1, -40, 0, 45)
-    InfoLabel.Font = Enum.Font.Gotham
-    InfoLabel.Text = "💡 Monitors ENTIRE GAME for stinger spawns anywhere"
-    InfoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-    InfoLabel.TextSize = 11
-    InfoLabel.TextWrapped = true
-    InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+    StatusLabel.Text = "Status: Idle"
+    StatusLabel.TextColor3 = Color3.fromRGB(200,200,200)
 
-    local PositionLabel = Instance.new("TextLabel")
-    PositionLabel.Name = "PositionLabel" -- important to name it
-    PositionLabel.Parent = MainFrame
+    local PositionLabel = Instance.new("TextLabel", MainFrame)
+    PositionLabel.Name = "PositionLabel"
+    PositionLabel.Size = UDim2.new(1,-40,0,25)
+    PositionLabel.Position = UDim2.new(0,20,0,240)
     PositionLabel.BackgroundTransparency = 1
-    PositionLabel.Position = UDim2.new(0, 20, 0, 285)
-    PositionLabel.Size = UDim2.new(1, -40, 0, 25)
     PositionLabel.Font = Enum.Font.Gotham
-    PositionLabel.Text = "Position: (X, Y, Z)"
-    PositionLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
     PositionLabel.TextSize = 13
     PositionLabel.TextXAlignment = Enum.TextXAlignment.Left
+    PositionLabel.TextColor3 = Color3.fromRGB(180,180,180)
+    PositionLabel.Text = "Position: (X, Y, Z)"
 
-    
+    -- Start Button
     StartButton.MouseButton1Click:Connect(function()
         if not config.isRunning then
             local webhook = WebhookBox.Text
             if webhook == "" or not webhook:match("^https://discord%.com/api/webhooks/") then
                 StatusLabel.Text = "Status: ❌ Invalid Webhook URL"
-                StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+                StatusLabel.TextColor3 = Color3.fromRGB(255,100,100)
                 return
             end
-            
             config.webhookUrl = webhook
-            
-            if writefile then
-                writefile("vicious_bee_webhook.txt", webhook)
-                print("✅ Webhook saved")
-            end
-            
+            if writefile then writefile("vicious_bee_webhook.txt", webhook) end
             config.isRunning = true
-            
-            -- Connect the listener for new objects EVERYWHERE in the game
             if not config._descendantConnection then
                 config._descendantConnection = game.DescendantAdded:Connect(onNewObject)
-                print("✅ Monitoring ENTIRE GAME for new objects...")
             end
-            
             StartButton.Text = "STOP DETECTING"
-            StartButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            StartButton.BackgroundColor3 = Color3.fromRGB(200,50,50)
             StatusLabel.Text = "Status: 👀 Watching for stingers..."
-            StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-            
-            sendWebhook(
-                "🚀 Detection Started", 
-                "Now monitoring for Vicious Bee stinger spawns in this server!", 
-                0x00AAFF, 
-                {{name = "🌐 Server ID", value = game.JobId, inline = false}}
-            )
-            
-            print("🎯 DETECTION ACTIVE - Watching for new objects...")
+            StatusLabel.TextColor3 = Color3.fromRGB(100,255,100)
         else
             config.isRunning = false
-            
             if config._descendantConnection then
                 config._descendantConnection:Disconnect()
                 config._descendantConnection = nil
-                print("✅ Stopped monitoring")
             end
-            
             StartButton.Text = "START DETECTING"
-            StartButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+            StartButton.BackgroundColor3 = Color3.fromRGB(50,200,50)
             StatusLabel.Text = "Status: Stopped"
-            StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-            FieldLabel.Text = "Field: Waiting..."
-            FieldLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+            StatusLabel.TextColor3 = Color3.fromRGB(200,200,200)
         end
-    end)
-    
-    CloseButton.MouseButton1Click:Connect(function()
-        config.isRunning = false
-        if config._descendantConnection then
-            config._descendantConnection:Disconnect()
-        end
-        ScreenGui:Destroy()
     end)
 end
 
-print("🐝 Vicious Bee Stinger Detector v3.0 Loaded!")
-print("📱 Opening GUI...")
-print("🎯 This script stays in ONE server and watches for stinger spawns!")
 createGUI()
-local RunService = game:GetService("RunService")
 
+-- Update player position in GUI
 RunService.RenderStepped:Connect(function()
     local char = player.Character
     if char and char:FindFirstChild("HumanoidRootPart") then
@@ -356,3 +246,5 @@ RunService.RenderStepped:Connect(function()
         end
     end
 end)
+
+print("🐝 Vicious Bee Stinger Detector Loaded! Waiting for Thorn...")
