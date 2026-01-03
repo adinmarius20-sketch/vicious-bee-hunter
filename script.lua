@@ -1,4 +1,4 @@
--- Vicious Bee Stinger Hunter Script v3.5 - FIXED CLICKABLE LINKS + SERVER LINK IN LOG
+-- Vicious Bee Stinger Hunter Script v3.6 - SECURED WITH WEBHOOK TOKEN
 -- Detects "Thorn" parts (Size: 3×2×1.5) that spawn near fields (ONCE per spawn event)
 
 local HttpService = game:GetService("HttpService")
@@ -14,6 +14,7 @@ local player = Players.LocalPlayer
 local config = {
     webhookUrl = "",
     pcServerUrl = "", -- Your PC's HTTP server URL (e.g., http://192.168.1.100:8080/log)
+    webhookSecret = "your_secret_webhook_token_here_change_this_12345", -- MUST MATCH SERVER!
     isRunning = false,
     stingerDetected = false,
     currentField = "None",
@@ -45,6 +46,15 @@ if isfile and readfile and isfile("vicious_bee_pcserver.txt") then
     if saved and saved ~= "" then
         config.pcServerUrl = saved
         print("✅ Loaded saved PC server URL")
+    end
+end
+
+-- Load saved webhook secret
+if isfile and readfile and isfile("vicious_bee_secret.txt") then
+    local saved = readfile("vicious_bee_secret.txt")
+    if saved and saved ~= "" then
+        config.webhookSecret = saved
+        print("✅ Loaded saved webhook secret")
     end
 end
 
@@ -175,13 +185,16 @@ local function updateStingerLog(playerName, field, status, joinLink)
             request({
                 Url = config.pcServerUrl,
                 Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["X-Webhook-Token"] = config.webhookSecret -- SEND SECRET TOKEN!
+                },
                 Body = HttpService:JSONEncode(logData)
             })
         end)
         
         if success then
-            print("✅ Log sent to PC server:", playerName, "-", field, "-", status)
+            print("✅ Log sent to PC server (SECURE):", playerName, "-", field, "-", status)
         else
             warn("❌ Failed to send log to PC:", err)
         end
@@ -344,7 +357,7 @@ local function onNewObject(obj)
     local joinLink = generateJoinLink()
     local serverTypeText = config.serverType == "Private" and "🔒 Private Server" or "🌐 Public Server"
 
-    -- Update log file with ACTIVE status and server link
+    -- Update log file with ACTIVE status and server link (SECURE WITH TOKEN)
     updateStingerLog(player.Name, field, "ACTIVE", joinLink)
     
     -- Set timer to change status to NOT ACTIVE after 4 minutes
@@ -394,6 +407,7 @@ local function onNewObject(obj)
     print("🖥️ Server Type:", serverTypeText)
     print("🔗 Join Link:", joinLink)
     print("🔢 Detection count:", config.detectionCount)
+    print("🔐 Log sent with webhook secret token")
 
     -- Clean up if removed
     obj.AncestryChanged:Connect(function()
@@ -418,6 +432,8 @@ local function createGUI()
     local WebhookBox = Instance.new("TextBox")
     local PCServerBox = Instance.new("TextBox")
     local PCServerLabel = Instance.new("TextLabel")
+    local WebhookSecretBox = Instance.new("TextBox")
+    local WebhookSecretLabel = Instance.new("TextLabel")
     local ServerTypeLabel = Instance.new("TextLabel")
     local PublicButton = Instance.new("TextButton")
     local PrivateButton = Instance.new("TextButton")
@@ -440,8 +456,8 @@ local function createGUI()
     MainFrame.Parent = ScreenGui
     MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     MainFrame.BorderSizePixel = 0
-    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -300)
-    MainFrame.Size = UDim2.new(0, 400, 0, 600)
+    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -350)
+    MainFrame.Size = UDim2.new(0, 400, 0, 700)
     MainFrame.Active = true
     MainFrame.Draggable = true
     
@@ -451,7 +467,7 @@ local function createGUI()
     Title.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
     Title.Size = UDim2.new(1, 0, 0, 50)
     Title.Font = Enum.Font.GothamBold
-    Title.Text = "🐝 Vicious Bee Detector v3.5"
+    Title.Text = "🐝 Vicious Bee Detector v3.6 🔐"
     Title.TextColor3 = Color3.fromRGB(20, 20, 20)
     Title.TextSize = 17
     
@@ -496,7 +512,7 @@ local function createGUI()
     PCServerBox.Position = UDim2.new(0, 20, 0, 145)
     PCServerBox.Size = UDim2.new(1, -40, 0, 40)
     PCServerBox.Font = Enum.Font.Gotham
-    PCServerBox.PlaceholderText = "http://YOUR_PC_IP:8080/log"
+    PCServerBox.PlaceholderText = "https://YOUR-NGROK-URL.ngrok-free.app/log"
     PCServerBox.Text = config.pcServerUrl
     PCServerBox.TextColor3 = Color3.fromRGB(255, 255, 255)
     PCServerBox.TextSize = 13
@@ -504,9 +520,32 @@ local function createGUI()
     
     Instance.new("UICorner", PCServerBox).CornerRadius = UDim.new(0, 8)
     
+    WebhookSecretLabel.Parent = MainFrame
+    WebhookSecretLabel.BackgroundTransparency = 1
+    WebhookSecretLabel.Position = UDim2.new(0, 20, 0, 195)
+    WebhookSecretLabel.Size = UDim2.new(1, -40, 0, 20)
+    WebhookSecretLabel.Font = Enum.Font.GothamBold
+    WebhookSecretLabel.Text = "🔐 Webhook Secret Token:"
+    WebhookSecretLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+    WebhookSecretLabel.TextSize = 12
+    WebhookSecretLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    WebhookSecretBox.Parent = MainFrame
+    WebhookSecretBox.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+    WebhookSecretBox.Position = UDim2.new(0, 20, 0, 220)
+    WebhookSecretBox.Size = UDim2.new(1, -40, 0, 40)
+    WebhookSecretBox.Font = Enum.Font.Gotham
+    WebhookSecretBox.PlaceholderText = "Enter secret token (must match server)..."
+    WebhookSecretBox.Text = config.webhookSecret
+    WebhookSecretBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    WebhookSecretBox.TextSize = 13
+    WebhookSecretBox.ClearTextOnFocus = false
+    
+    Instance.new("UICorner", WebhookSecretBox).CornerRadius = UDim.new(0, 8)
+    
     ServerTypeLabel.Parent = MainFrame
     ServerTypeLabel.BackgroundTransparency = 1
-    ServerTypeLabel.Position = UDim2.new(0, 20, 0, 200)
+    ServerTypeLabel.Position = UDim2.new(0, 20, 0, 275)
     ServerTypeLabel.Size = UDim2.new(1, -40, 0, 20)
     ServerTypeLabel.Font = Enum.Font.GothamBold
     ServerTypeLabel.Text = "Server Type:"
@@ -516,7 +555,7 @@ local function createGUI()
     
     PublicButton.Parent = MainFrame
     PublicButton.BackgroundColor3 = config.serverType == "Public" and Color3.fromRGB(50, 150, 255) or Color3.fromRGB(60, 60, 65)
-    PublicButton.Position = UDim2.new(0, 20, 0, 225)
+    PublicButton.Position = UDim2.new(0, 20, 0, 300)
     PublicButton.Size = UDim2.new(0.48, -15, 0, 35)
     PublicButton.Font = Enum.Font.GothamBold
     PublicButton.Text = "🌐 Public Server"
@@ -527,7 +566,7 @@ local function createGUI()
     
     PrivateButton.Parent = MainFrame
     PrivateButton.BackgroundColor3 = config.serverType == "Private" and Color3.fromRGB(50, 150, 255) or Color3.fromRGB(60, 60, 65)
-    PrivateButton.Position = UDim2.new(0.52, 5, 0, 225)
+    PrivateButton.Position = UDim2.new(0.52, 5, 0, 300)
     PrivateButton.Size = UDim2.new(0.48, -15, 0, 35)
     PrivateButton.Font = Enum.Font.GothamBold
     PrivateButton.Text = "🔒 Private Server"
@@ -538,7 +577,7 @@ local function createGUI()
     
     PrivateServerBox.Parent = MainFrame
     PrivateServerBox.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-    PrivateServerBox.Position = UDim2.new(0, 20, 0, 270)
+    PrivateServerBox.Position = UDim2.new(0, 20, 0, 345)
     PrivateServerBox.Size = UDim2.new(1, -40, 0, 40)
     PrivateServerBox.Font = Enum.Font.Gotham
     PrivateServerBox.PlaceholderText = "Paste Private Server Link Here..."
@@ -552,7 +591,7 @@ local function createGUI()
     
     StartButton.Parent = MainFrame
     StartButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    StartButton.Position = UDim2.new(0, 20, 0, 320)
+    StartButton.Position = UDim2.new(0, 20, 0, 395)
     StartButton.Size = UDim2.new(1, -40, 0, 45)
     StartButton.Font = Enum.Font.GothamBold
     StartButton.Text = "START DETECTING"
@@ -564,7 +603,7 @@ local function createGUI()
     StatusLabel.Parent = MainFrame
     StatusLabel.Name = "StatusLabel"
     StatusLabel.BackgroundTransparency = 1
-    StatusLabel.Position = UDim2.new(0, 20, 0, 380)
+    StatusLabel.Position = UDim2.new(0, 20, 0, 455)
     StatusLabel.Size = UDim2.new(1, -40, 0, 25)
     StatusLabel.Font = Enum.Font.GothamBold
     StatusLabel.Text = "Status: Idle"
@@ -575,7 +614,7 @@ local function createGUI()
     FieldLabel.Parent = MainFrame
     FieldLabel.Name = "FieldLabel"
     FieldLabel.BackgroundTransparency = 1
-    FieldLabel.Position = UDim2.new(0, 20, 0, 405)
+    FieldLabel.Position = UDim2.new(0, 20, 0, 480)
     FieldLabel.Size = UDim2.new(1, -40, 0, 25)
     FieldLabel.Font = Enum.Font.Gotham
     FieldLabel.Text = "Field: Waiting..."
@@ -586,7 +625,7 @@ local function createGUI()
     DetectionCountLabel.Parent = MainFrame
     DetectionCountLabel.Name = "DetectionCountLabel"
     DetectionCountLabel.BackgroundTransparency = 1
-    DetectionCountLabel.Position = UDim2.new(0, 20, 0, 430)
+    DetectionCountLabel.Position = UDim2.new(0, 20, 0, 505)
     DetectionCountLabel.Size = UDim2.new(1, -40, 0, 25)
     DetectionCountLabel.Font = Enum.Font.Gotham
     DetectionCountLabel.Text = "Detections: 0"
@@ -597,7 +636,7 @@ local function createGUI()
     AntiIdleLabel.Parent = MainFrame
     AntiIdleLabel.Name = "AntiIdleLabel"
     AntiIdleLabel.BackgroundTransparency = 1
-    AntiIdleLabel.Position = UDim2.new(0, 20, 0, 455)
+    AntiIdleLabel.Position = UDim2.new(0, 20, 0, 530)
     AntiIdleLabel.Size = UDim2.new(1, -40, 0, 25)
     AntiIdleLabel.Font = Enum.Font.Gotham
     AntiIdleLabel.Text = "🔄 Anti-Idle: Active"
@@ -607,10 +646,10 @@ local function createGUI()
     
     InfoLabel.Parent = MainFrame
     InfoLabel.BackgroundTransparency = 1
-    InfoLabel.Position = UDim2.new(0, 20, 0, 485)
+    InfoLabel.Position = UDim2.new(0, 20, 0, 560)
     InfoLabel.Size = UDim2.new(1, -40, 0, 45)
     InfoLabel.Font = Enum.Font.Gotham
-    InfoLabel.Text = "💡 Detects 'Thorn' parts (Size: 3×2×1.5) once per spawn"
+    InfoLabel.Text = "🔐 Secured with webhook token | Size: 3×2×1.5"
     InfoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
     InfoLabel.TextSize = 11
     InfoLabel.TextWrapped = true
@@ -619,7 +658,7 @@ local function createGUI()
     PositionLabel.Name = "PositionLabel"
     PositionLabel.Parent = MainFrame
     PositionLabel.BackgroundTransparency = 1
-    PositionLabel.Position = UDim2.new(0, 20, 0, 540)
+    PositionLabel.Position = UDim2.new(0, 20, 0, 615)
     PositionLabel.Size = UDim2.new(1, -40, 0, 25)
     PositionLabel.Font = Enum.Font.Gotham
     PositionLabel.Text = "Position: Waiting..."
@@ -629,7 +668,7 @@ local function createGUI()
     
     ViewLogButton.Parent = MainFrame
     ViewLogButton.BackgroundColor3 = Color3.fromRGB(255, 150, 50)
-    ViewLogButton.Position = UDim2.new(0, 20, 0, 570)
+    ViewLogButton.Position = UDim2.new(0, 20, 0, 650)
     ViewLogButton.Size = UDim2.new(1, -40, 0, 35)
     ViewLogButton.Font = Enum.Font.GothamBold
     ViewLogButton.Text = "📋 VIEW STINGER LOG"
@@ -694,11 +733,25 @@ local function createGUI()
         end
     end)
     
+    WebhookSecretBox.FocusLost:Connect(function()
+        config.webhookSecret = WebhookSecretBox.Text
+        if writefile then
+            writefile("vicious_bee_secret.txt", WebhookSecretBox.Text)
+            print("✅ Webhook secret saved (KEEP THIS SECRET!)")
+        end
+    end)
+    
     StartButton.MouseButton1Click:Connect(function()
         if not config.isRunning then
             local webhook = WebhookBox.Text
             if webhook == "" or not webhook:match("^https://discord%.com/api/webhooks/") then
                 StatusLabel.Text = "Status: ❌ Invalid Webhook URL"
+                StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+                return
+            end
+            
+            if config.webhookSecret == "" or config.webhookSecret == "your_secret_webhook_token_here_change_this_12345" then
+                StatusLabel.Text = "Status: ❌ Set webhook secret token first!"
                 StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
                 return
             end
@@ -725,24 +778,26 @@ local function createGUI()
             
             StartButton.Text = "STOP DETECTING"
             StartButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-            StatusLabel.Text = "Status: 👀 Watching for stingers (3×2×1.5)..."
+            StatusLabel.Text = "Status: 👀 Watching (SECURED)"
             StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
             
             local serverTypeText = config.serverType == "Private" and "🔒 Private Server" or "🌐 Public Server"
             
             sendWebhook(
                 "🚀 Detection Started", 
-                "Now monitoring for Vicious Bee stinger spawns (Thorn parts with verified size) in this server! Anti-idle is active.", 
+                "Now monitoring for Vicious Bee stinger spawns! Anti-idle is active. 🔐 Secured with webhook token.", 
                 0x00AAFF, 
                 {
                     {name = "🖥️ Server Type", value = serverTypeText, inline = true},
-                    {name = "📐 Target Size", value = "3.0×2.0×1.5", inline = true}
+                    {name = "📐 Target Size", value = "3.0×2.0×1.5", inline = true},
+                    {name = "🔐 Security", value = "Webhook Token Active", inline = true}
                 }
             )
             
             print("🎯 DETECTION ACTIVE - Watching for 'Thorn' parts with size 3×2×1.5...")
             print("🔄 Anti-idle system is active!")
             print("🖥️ Server Type:", serverTypeText)
+            print("🔐 Webhook secret token is configured")
         else
             config.isRunning = false
             
@@ -781,7 +836,7 @@ local function createGUI()
         
         task.wait(2)
         if config.isRunning then
-            StatusLabel.Text = "Status: 👀 Watching for stingers (3×2×1.5)..."
+            StatusLabel.Text = "Status: 👀 Watching (SECURED)"
             StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
         else
             StatusLabel.Text = "Status: Idle"
@@ -819,11 +874,12 @@ local function createGUI()
     end)
 end
 
-print("🐝 Vicious Bee Stinger Detector v3.5 Loaded!")
+print("🐝 Vicious Bee Stinger Detector v3.6 Loaded!")
 print("📱 Opening GUI...")
 print("🎯 This script detects 'Thorn' parts (Size: 3×2×1.5) spawning near fields!")
 print("🔄 Anti-idle system enabled!")
 print("🖥️ Server Type:", config.serverType)
 print("✅ Size verification active: Only detects stingers with exact size 3.0×2.0×1.5")
-print("🔗 Join links are now clickable in Discord!")
+print("🔐 SECURITY: Webhook secret token system enabled!")
+print("⚠️  IMPORTANT: Set your webhook secret token before starting!")
 createGUI()
